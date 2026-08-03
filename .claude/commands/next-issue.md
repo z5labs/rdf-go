@@ -6,12 +6,12 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, EnterWorktree, ExitWorktree,
 Run **exactly one** issue end-to-end, then stop. Do not start a second issue in the same
 invocation — the loop re-invokes this command for the next one.
 
-Repo: `z5labs/rdf-go`. Default branch: `main`. Milestone under construction: `v0.1.0`.
+Repo: `z5labs/rdf-go`. Default branch: `main`. Milestone under construction: `v0.2.0`.
 
 ## 1. Pick the issue
 
 ```
-gh issue list --state open --label story --milestone v0.1.0 --limit 100 --json number,title --jq 'sort_by(.number)[]'
+gh issue list --state open --label story --milestone v0.2.0 --limit 100 --json number,title --jq 'sort_by(.number)[]'
 ```
 
 Always pass `--limit` — the default page size is 30 and this backlog is larger, so
