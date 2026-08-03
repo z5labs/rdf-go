@@ -24,64 +24,70 @@ import (
 // concatenated with a local name to form one, as the constants below do and as
 // a caller may for a term this package does not declare.
 const (
-	// NamespaceRDF is the RDF namespace, whose conventional prefix is rdf:
-	// (RDF 1.1 Concepts §1.4).
+	// NamespaceRDF is the RDF namespace, whose conventional prefix is rdf:.
 	NamespaceRDF = rdf.NamespaceRDF
 
 	// NamespaceRDFS is the RDF Schema namespace, whose conventional prefix is
-	// rdfs: (RDF Schema 1.1 §1.2).
+	// rdfs:.
 	NamespaceRDFS = "http://www.w3.org/2000/01/rdf-schema#"
 
 	// NamespaceXSD is the XML Schema datatypes namespace, whose conventional
-	// prefix is xsd: (RDF 1.1 Concepts §5.1).
+	// prefix is xsd:.
 	NamespaceXSD = rdf.NamespaceXSD
 )
 
-// Terms of the RDF vocabulary (RDF Schema 1.1 §5, RDF 1.2 Concepts §1.9).
+// Terms of the RDF vocabulary. The rdf: namespace is spread across two
+// specifications — the terms RDF 1.1 already had are defined in RDF Schema
+// 1.1, the ones RDF 1.2 introduced in RDF 1.2 Concepts — so each is cited
+// where it is actually published rather than under one heading for the group.
 const (
 	// RDFType is rdf:type, which states that its subject is an instance of its
-	// object. It is the predicate the "a" keyword abbreviates in Turtle and
-	// TriG.
+	// object (RDF Schema 1.1 §3.3). It is the predicate the "a" keyword
+	// abbreviates in Turtle and TriG.
 	RDFType rdf.IRI = NamespaceRDF + "type"
 
 	// RDFFirst is rdf:first, the predicate holding the head of a collection
-	// cell.
+	// cell (RDF Schema 1.1 §5.2).
 	RDFFirst rdf.IRI = NamespaceRDF + "first"
 
 	// RDFRest is rdf:rest, the predicate holding the tail of a collection
-	// cell: either another cell or [RDFNil].
+	// cell: either another cell or [RDFNil] (RDF Schema 1.1 §5.2).
 	RDFRest rdf.IRI = NamespaceRDF + "rest"
 
 	// RDFNil is rdf:nil, the empty collection, which terminates the chain of
-	// cells a Turtle collection expands to.
+	// cells a Turtle collection expands to (RDF Schema 1.1 §5.2).
 	RDFNil rdf.IRI = NamespaceRDF + "nil"
 
 	// RDFLangString is rdf:langString, the datatype of every literal carrying
-	// a language tag but no base direction.
+	// a language tag but no base direction (RDF 1.2 Concepts §3.4.1).
 	RDFLangString rdf.IRI = rdf.RDFLangString
 
 	// RDFDirLangString is rdf:dirLangString, the datatype of every literal
-	// carrying both a language tag and a base direction.
+	// carrying both a language tag and a base direction (RDF 1.2 Concepts
+	// §3.4).
 	//
-	// It is an RDF 1.2 addition: RDF 1.1 has no way to record the base
-	// direction of text, so no 1.1 document can mention this datatype.
+	// It is an RDF 1.2 addition. RDF 1.1 defined no such datatype, and its
+	// syntaxes give no way to write a base direction, so a 1.1 document can
+	// reach this IRI only as an ordinary datatype IRI carrying none of the
+	// meaning 1.2 attaches to it.
 	RDFDirLangString rdf.IRI = rdf.RDFDirLangString
 
 	// RDFReifies is rdf:reifies, the predicate relating a reifier to the
-	// triple term it reifies.
+	// triple term it reifies (RDF 1.2 Concepts §1.5).
 	//
-	// It is an RDF 1.2 addition, introduced with triple terms; RDF 1.1
-	// reification instead spelled a statement out with rdf:subject,
-	// rdf:predicate and rdf:object.
+	// It is an RDF 1.2 addition, introduced alongside triple terms. RDF 1.1
+	// had no triple terms; its reification vocabulary spelled a statement out
+	// with rdf:subject, rdf:predicate and rdf:object instead.
 	RDFReifies rdf.IRI = NamespaceRDF + "reifies"
 
 	// RDFJSON is rdf:JSON, the datatype of a literal whose lexical form is a
-	// JSON document. The local name is capitalised, as a datatype's is.
+	// JSON document (RDF 1.2 Concepts §A.3). The local name is capitalised, as
+	// a datatype's is.
 	RDFJSON rdf.IRI = NamespaceRDF + "JSON"
 )
 
-// Datatypes of the XML Schema vocabulary that RDF adopts (RDF 1.1 Concepts
-// §5.1, XML Schema Part 2 §3).
+// Datatypes of the XML Schema vocabulary that RDF adopts (RDF 1.2 Concepts
+// §5.1).
 const (
 	// XSDString is xsd:string, the datatype of a literal written with neither
 	// a language tag nor an explicit datatype.
@@ -103,7 +109,8 @@ const (
 	XSDDouble rdf.IRI = NamespaceXSD + "double"
 )
 
-// Terms of the RDF Schema vocabulary (RDF Schema 1.1 §2 and §3).
+// Terms of the RDF Schema vocabulary, the classes from RDF Schema 1.1 §2 and
+// the properties from §3.
 const (
 	// RDFSClass is rdfs:Class, the class of classes.
 	RDFSClass rdf.IRI = NamespaceRDFS + "Class"
