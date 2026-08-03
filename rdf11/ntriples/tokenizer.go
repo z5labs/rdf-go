@@ -256,20 +256,38 @@ func (t *tokenizer) advance(r rune) {
 	}
 }
 
-// backup returns the last character read to the reader and restores the
-// position to what it was before reading it.
-func (t *tokenizer) backup(previous Pos) error {
+// mark is everything reading a character changes, and so everything undoing
+// one has to put back.
+//
+// The carriage return flag belongs here as much as the position does. Reading
+// the line feed of a CRLF pair clears it, so a backup that restored only the
+// position would leave the tokenizer believing the next line feed begins a
+// line of its own, and count the line twice.
+type mark struct {
+	pos     Pos
+	afterCR bool
+}
+
+// mark records where the tokenizer is, so that backup can return to it.
+func (t *tokenizer) mark() mark {
+	return mark{pos: t.pos, afterCR: t.afterCR}
+}
+
+// backup returns the last character read to the reader and undoes what reading
+// it changed.
+func (t *tokenizer) backup(m mark) error {
 	if err := t.buf.UnreadRune(); err != nil {
 		return err
 	}
-	t.pos = previous
+	t.pos = m.pos
+	t.afterCR = m.afterCR
 	return nil
 }
 
 // peek reports what the next character is without consuming it, and whether
 // there was one.
 func (t *tokenizer) peek() (rune, bool, error) {
-	previous := t.pos
+	previous := t.mark()
 
 	r, err := t.next()
 	if errors.Is(err, io.EOF) {
@@ -699,7 +717,7 @@ func tokenizeBlankNodeLabel(pos Pos) tokenizerAction {
 		// Dots are held back until a label character justifies them.
 		var trailing []Pos
 		for {
-			dotPos := t.pos
+			before := t.mark()
 
 			r, err := t.next()
 			if err != nil {
@@ -711,7 +729,7 @@ func tokenizeBlankNodeLabel(pos Pos) tokenizerAction {
 
 			switch {
 			case r == '.':
-				trailing = append(trailing, dotPos)
+				trailing = append(trailing, before.pos)
 			case isPNChars(r):
 				for range trailing {
 					label.WriteRune('.')
@@ -719,7 +737,7 @@ func tokenizeBlankNodeLabel(pos Pos) tokenizerAction {
 				trailing = trailing[:0]
 				label.WriteRune(r)
 			default:
-				if err := t.backup(dotPos); err != nil {
+				if err := t.backup(before); err != nil {
 					return yieldErrorOr(err, nil)
 				}
 				return blankNodeLabelThen(pos, label.Bytes(), trailing)
