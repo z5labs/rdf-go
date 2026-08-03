@@ -31,5 +31,6 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# Agent tooling and scratch worktrees
-/.claude/
+# Scratch worktrees created by the dev cycle. The rest of .claude/ — the
+# next-issue command and the permission allowlist — is checked in.
+/.claude/worktrees/
