@@ -68,31 +68,68 @@ func joinTokenTypes(types []TokenType) string {
 // Parsing stops at the first error, which is either one of this package's
 // parse errors or the tokenizer error that prevented reading further.
 func Parse(r io.Reader) (*Document, error) {
+	doc := &Document{Pos: Pos{Line: 1, Column: 1}}
+	if err := parse(r, doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+// sink receives what the parser reads, one statement at a time.
+//
+// There is only one implementation of the grammar, and this is how it serves
+// two callers with opposite needs. [Parse] collects everything into a
+// [Document]; [Decode] lowers each statement and hands its triples on the
+// moment the statement is complete, keeping nothing but the directives still in
+// scope, which is what lets it read a document larger than memory. Splitting
+// the grammar in two instead would leave two things to keep in step with the
+// specification.
+type sink interface {
+	// statement receives a parsed statement. Returning an error stops parsing,
+	// and the error is what parse reports.
+	statement(Statement) error
+
+	// comment receives a comment at pos, with text as the tokenizer read it.
+	//
+	// The text is passed raw, and is only good until the next token is read.
+	// An implementation that keeps a comment has to copy it, and one that
+	// drops it — which streaming does — then pays nothing for a comment it was
+	// never going to look at.
+	comment(pos Pos, text []byte)
+}
+
+// statement appends the statement to the document.
+func (d *Document) statement(s Statement) error {
+	d.Statements = append(d.Statements, s)
+	return nil
+}
+
+// comment appends a copy of the comment to the document.
+func (d *Document) comment(pos Pos, text []byte) {
+	d.Comments = append(d.Comments, &Comment{Pos: pos, Text: string(text)})
+}
+
+// parse reads the document in r, handing each statement and comment to s.
+func parse(r io.Reader, s sink) error {
 	next, stop := iter.Pull2(Tokenize(r))
 	defer stop()
 
-	doc := &Document{Pos: Pos{Line: 1, Column: 1}}
-	p := &parser{next: next, pos: Pos{Line: 1, Column: 1}}
+	p := &parser{next: next, pos: Pos{Line: 1, Column: 1}, sink: s}
 
 	var err error
 	for action := parseDocument; action != nil && err == nil; {
-		action, err = action(p, doc)
+		action, err = action(p, s)
 	}
-	if err != nil {
-		return nil, err
-	}
-
-	doc.Comments = p.comments
-	return doc, nil
+	return err
 }
 
 // parser reads the token stream one token at a time, with a single token of
 // lookahead.
 type parser struct {
-	next     func() (Token, error, bool)
-	pending  *Token
-	pos      Pos
-	comments []*Comment
+	next    func() (Token, error, bool)
+	pending *Token
+	pos     Pos
+	sink    sink
 }
 
 // pull takes the next token that is not a comment, keeping the comments it
@@ -111,7 +148,7 @@ func (p *parser) pull() (Token, error, bool) {
 		if tok.Type != TokenComment {
 			return tok, nil, true
 		}
-		p.comments = append(p.comments, &Comment{Pos: tok.Pos, Text: string(tok.Value)})
+		p.sink.comment(tok.Pos, tok.Value)
 	}
 }
 
@@ -177,7 +214,7 @@ type parserAction[T any] func(p *parser, t T) (parserAction[T], error)
 //
 // Comments need no handling here: the parser passes over them wherever they
 // stand, which is anywhere at all.
-func parseDocument(p *parser, doc *Document) (parserAction[*Document], error) {
+func parseDocument(p *parser, s sink) (parserAction[sink], error) {
 	_, err, ok := p.peek()
 	if err != nil {
 		return nil, err
@@ -191,7 +228,7 @@ func parseDocument(p *parser, doc *Document) (parserAction[*Document], error) {
 // parseStatement reads one directive or one set of triples.
 //
 //	statement ::= directive | triples '.'
-func parseStatement(p *parser, doc *Document) (parserAction[*Document], error) {
+func parseStatement(p *parser, s sink) (parserAction[sink], error) {
 	tok, err, ok := p.peek()
 	if err != nil {
 		return nil, err
@@ -200,27 +237,22 @@ func parseStatement(p *parser, doc *Document) (parserAction[*Document], error) {
 		return nil, nil
 	}
 
+	var statement Statement
 	switch tok.Type {
 	case TokenPrefix:
-		statement, err := parsePrefixDirective(p)
-		if err != nil {
-			return nil, err
-		}
-		doc.Statements = append(doc.Statements, statement)
+		statement, err = parsePrefixDirective(p)
 	case TokenBase:
-		statement, err := parseBaseDirective(p)
-		if err != nil {
-			return nil, err
-		}
-		doc.Statements = append(doc.Statements, statement)
+		statement, err = parseBaseDirective(p)
 	default:
-		statement, err := parseTriples(p)
-		if err != nil {
-			return nil, err
-		}
-		doc.Statements = append(doc.Statements, statement)
+		statement, err = parseTriples(p)
+	}
+	if err != nil {
+		return nil, err
 	}
 
+	if err := s.statement(statement); err != nil {
+		return nil, err
+	}
 	return parseDocument, nil
 }
 
