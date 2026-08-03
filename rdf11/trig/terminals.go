@@ -1,4 +1,4 @@
-package turtle
+package trig
 
 import (
 	"bytes"
@@ -57,6 +57,10 @@ func tokenizeDocument(t *tokenizer, yield func(Token, error) bool) tokenizerActi
 			return symbol(pos, TokenCloseParen, ")")
 		case r == ']':
 			return symbol(pos, TokenCloseBracket, "]")
+		case r == '{':
+			return symbol(pos, TokenOpenBrace, "{")
+		case r == '}':
+			return symbol(pos, TokenCloseBrace, "}")
 		default:
 			// RDF 1.2 arrives here, or in tokenizeIRIRef: "<<(" fails on the
 			// second '<', which the IRIREF production excludes.
@@ -318,7 +322,8 @@ func tokenizeAnonOrOpenBracket(pos Pos) tokenizerAction {
 //
 // A name and a keyword begin alike, so the prefix is read first and what it
 // turned out to be is settled afterwards: a ':' makes it a prefixed name, and
-// without one it can only be "a", "PREFIX" or "BASE".
+// without one it can only be a keyword — "a", "true", "false", "PREFIX",
+// "BASE" or "GRAPH".
 func tokenizeName(pos Pos, first rune) tokenizerAction {
 	return func(t *tokenizer, yield func(Token, error) bool) tokenizerAction {
 		var prefix bytes.Buffer
@@ -360,6 +365,10 @@ func tokenizeName(pos Pos, first rune) tokenizerAction {
 // The dots held back while reading the name are emitted after it, as they are
 // after a blank node label: "a." is the keyword and the '.' that ends the
 // statement.
+//
+// A name followed by a ':' never reaches here, so "graph:name" is still a
+// prefixed name on the "graph" prefix rather than the keyword and a stray
+// colon.
 func keywordThen(pos Pos, name string, trailing []Pos) tokenizerAction {
 	var tok Token
 
@@ -374,6 +383,10 @@ func keywordThen(pos Pos, name string, trailing []Pos) tokenizerAction {
 		tok = Token{Pos: pos, Type: TokenPrefix, Value: []byte(name)}
 	case strings.EqualFold(name, "base"):
 		tok = Token{Pos: pos, Type: TokenBase, Value: []byte(name)}
+	case strings.EqualFold(name, "graph"):
+		// The keyword TriG adds, and case-insensitive for the same reason the
+		// two above are: the grammar writes it in double quotes.
+		tok = Token{Pos: pos, Type: TokenGraph, Value: []byte(name)}
 	default:
 		return yieldErrorOr(UnexpectedNameError{Pos: pos, Name: name}, nil)
 	}

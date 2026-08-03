@@ -394,6 +394,32 @@ func TestTokenizeNumbers(t *testing.T) {
 			},
 		},
 		{
+			// A number holds one decimal point, so the second ends this one
+			// and begins the next, exactly as it does in ".5.5".
+			name: "a second decimal point begins a second number",
+			src:  `1.2.3`,
+			expected: []turtle.Token{
+				tok(1, 1, turtle.TokenDecimal, "1.2"),
+				tok(1, 4, turtle.TokenDecimal, ".3"),
+			},
+		},
+		{
+			name: "a second decimal point where the first began the number",
+			src:  `.5.5`,
+			expected: []turtle.Token{
+				tok(1, 1, turtle.TokenDecimal, ".5"),
+				tok(1, 3, turtle.TokenDecimal, ".5"),
+			},
+		},
+		{
+			name: "a decimal followed immediately by the dot that ends the statement",
+			src:  `1.2.`,
+			expected: []turtle.Token{
+				tok(1, 1, turtle.TokenDecimal, "1.2"),
+				tok(1, 4, turtle.TokenDot, "."),
+			},
+		},
+		{
 			name: "a number in a statement",
 			src:  `<http://e/s> <http://e/p> 42 .`,
 			expected: []turtle.Token{

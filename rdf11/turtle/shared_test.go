@@ -165,6 +165,29 @@ func TestTokenizeSharedErrors(t *testing.T) {
 			src:         `1e! `,
 			expectedErr: turtle.UnexpectedCharacterError{Pos: turtle.Pos{Line: 1, Column: 3}, R: '!'},
 		},
+		{
+			// Every numeric production requires a digit, so a sign and a
+			// decimal point on their own are not a number, however the rest of
+			// the input goes on.
+			name:        "a minus sign and a point at the end of the input",
+			src:         `-.`,
+			expectedErr: turtle.UnexpectedEndOfInputError{Pos: turtle.Pos{Line: 1, Column: 3}},
+		},
+		{
+			name:        "a plus sign and a point at the end of the input",
+			src:         `+.`,
+			expectedErr: turtle.UnexpectedEndOfInputError{Pos: turtle.Pos{Line: 1, Column: 3}},
+		},
+		{
+			name:        "a sign and a point followed by something that is not a digit",
+			src:         `-.x`,
+			expectedErr: turtle.UnexpectedCharacterError{Pos: turtle.Pos{Line: 1, Column: 3}, R: 'x'},
+		},
+		{
+			name:        "a sign and a point followed by an exponent",
+			src:         `-.e6`,
+			expectedErr: turtle.UnexpectedCharacterError{Pos: turtle.Pos{Line: 1, Column: 3}, R: 'e'},
+		},
 	}
 
 	for _, tc := range testCases {
