@@ -30,7 +30,7 @@ var (
 // a field type; the other two are checked by [Triple.Validate], which every
 // insertion into a [Graph] or a [Dataset] performs.
 //
-// A Triple is comparable — the three term types are — but == is finer than RDF
+// A Triple is comparable — the four term types are — but == is finer than RDF
 // term equality, which folds the case of language tags. Compare with
 // [Triple.Equal].
 type Triple struct {
@@ -44,7 +44,7 @@ type Triple struct {
 	Predicate IRI
 
 	// Object is the value of the relation. Every term is valid in this
-	// position.
+	// position, including a [TripleTerm], which is valid in no other.
 	Object Term
 }
 
@@ -53,20 +53,37 @@ type Triple struct {
 // [ErrInvalidPredicate] or [ErrInvalidObject] wrapped with the offending
 // value.
 //
+// An object that is a [TripleTerm] is validated in turn, so a triple term
+// nested anywhere in the object is checked to the bottom.
+//
 // Only the constraints of the data model are checked. A predicate that is
 // non-empty but not an absolute IRI passes, because deciding that is the job
 // of the iri package and of the parsers that read concrete syntax.
 func (t Triple) Validate() error {
-	switch t.Subject.(type) {
+	return validateStatement(t.Subject, t.Predicate, t.Object)
+}
+
+// validateStatement checks the position constraints shared by [Triple] and
+// [TripleTerm], which are the same ones: a subject that is an IRI or a blank
+// node, a non-empty predicate, and an object that is present.
+//
+// A [TripleTerm] fails the subject check by falling to the default case, which
+// is the rule that keeps triple terms to the object position. An object that
+// is one recurses, so the rule holds however deep the nesting goes.
+func validateStatement(subject Term, predicate IRI, object Term) error {
+	switch subject.(type) {
 	case IRI, BlankNode:
 	default:
-		return fmt.Errorf("%w: got %s", ErrInvalidSubject, describeTerm(t.Subject))
+		return fmt.Errorf("%w: got %s", ErrInvalidSubject, describeTerm(subject))
 	}
-	if t.Predicate == "" {
+	if predicate == "" {
 		return ErrInvalidPredicate
 	}
-	if t.Object == nil {
+	if object == nil {
 		return ErrInvalidObject
+	}
+	if nested, ok := object.(TripleTerm); ok {
+		return nested.Validate()
 	}
 	return nil
 }

@@ -39,4 +39,11 @@
 // This package implements RDF 1.1 only. The lexemes RDF 1.2 adds — the triple
 // term brackets "<<(" and ")>>", and the base direction suffixes "--ltr" and
 // "--rtl" — are rejected here, and belong to the rdf12/turtle package.
+//
+// Writing goes the same way. The shared term types of the
+// [github.com/z5labs/rdf-go] package model RDF 1.2, so a triple term or a
+// literal carrying a base direction can reach [Encode] even though this
+// package's own parser can never produce one; both are reported, as
+// [ErrTripleTerm] and [ErrBaseDirection], rather than written in a spelling
+// RDF 1.1 Turtle does not have.
 package turtle

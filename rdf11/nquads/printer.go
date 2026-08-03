@@ -13,6 +13,16 @@ import (
 // ErrNilDocument is reported when [Print] is given no document to print.
 var ErrNilDocument = errors.New("nquads: cannot print a nil document")
 
+// ErrTripleTerm is reported when [Encode] is given a quad whose object is a
+// triple term.
+//
+// The shared term types model RDF 1.2, where a triple used as a term is the
+// fourth kind of term; RDF 1.1 N-Quads has no syntax for one. Writing the
+// "<<(" and ")>>" brackets anyway would produce a document this package could
+// not read back, so it is refused here and belongs to the rdf12/nquads package
+// instead.
+var ErrTripleTerm = errors.New("nquads: triple term has no RDF 1.1 N-Quads syntax")
+
 // Print writes doc to w as N-Quads.
 //
 // The document is reproduced rather than normalized: its statements keep the
@@ -217,10 +227,11 @@ func literal(l *Literal) string {
 // same dataset and need not be the same bytes. Producing labels that are
 // themselves canonical is a separate problem, and a much larger one.
 //
-// Encoding stops at the first error, which is the one from w, or the one from
+// Encoding stops at the first error, which is the one from w, the one from
 // [rdf.Quad.Validate] if a quad could not be written as N-Quads at all — a
 // literal subject or graph label cannot, and writing one anyway would produce
-// a document this package could not read back.
+// a document this package could not read back — or [ErrTripleTerm] if its
+// object is a triple term, which RDF 1.1 has no syntax for.
 //
 // Stopping early does not discard what came before it: the statements written
 // before the offending one reach w, and only the offending one and those after
@@ -232,6 +243,10 @@ func Encode(w io.Writer, quads iter.Seq[rdf.Quad]) error {
 	var err error
 	for quad := range quads {
 		if err = quad.Validate(); err != nil {
+			break
+		}
+		if object, ok := quad.Object.(rdf.TripleTerm); ok {
+			err = fmt.Errorf("%w: %s", ErrTripleTerm, object)
 			break
 		}
 		if _, err = io.WriteString(buf, quad.String()); err != nil {

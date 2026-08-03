@@ -60,4 +60,10 @@
 // "--rtl" — are rejected here, and belong to the rdf12/trig package. Both
 // produce the shared term types of the rdf package, so a dataset read by one
 // can be written by the other.
+//
+// Writing goes the same way. Those shared term types model RDF 1.2, so a
+// triple term or a literal carrying a base direction can reach [Encode] even
+// though this package's own parser can never produce one; both are reported,
+// as [ErrTripleTerm] and [ErrBaseDirection], rather than written in a spelling
+// RDF 1.1 TriG does not have.
 package trig

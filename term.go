@@ -30,12 +30,25 @@ const (
 	RDFDirLangString IRI = NamespaceRDF + "dirLangString"
 )
 
-// Term is an RDF term: an [IRI], a [BlankNode] or a [Literal].
+// Term is an RDF term: an [IRI], a [BlankNode], a [Literal] or a
+// [TripleTerm].
 //
-// The interface is sealed by an unexported method, so these three types are the
+// The interface is sealed by an unexported method, so these four types are the
 // only implementations that can ever exist. A type switch over a Term is
 // therefore exhaustive, and a default case can be treated as a programming
 // error rather than as something a future release might start returning.
+//
+// [TripleTerm] is the one RDF 1.2 adds, and the one position constraints have
+// something to say about: it may only be an object. The other three may stand
+// wherever the abstract syntax allows a term of their kind.
+//
+// Terms are values. A pointer to one satisfies this interface as well — the
+// methods take value receivers, so the pointer's method set holds the sealing
+// method too — but nothing in this module produces a *IRI, a *BlankNode, a
+// *Literal or a *TripleTerm: every constructor returns a value, every position
+// on a [Triple] and a [Quad] holds one, and every parser yields one. The type
+// switches that read a Term account for the four value types alone. Store and
+// pass terms as values.
 type Term interface {
 	// Equal reports whether t and other are the same RDF term.
 	Equal(other Term) bool
@@ -52,6 +65,7 @@ var (
 	_ Term = IRI("")
 	_ Term = BlankNode{}
 	_ Term = Literal{}
+	_ Term = TripleTerm{}
 )
 
 // IRI is an Internationalized Resource Identifier, the absolute form of which
