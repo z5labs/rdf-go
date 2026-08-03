@@ -11,28 +11,35 @@ above and in `testsuite/conformance_test.go`, which asserts the two agree.
 
 ## What is vendored
 
-Only the two suites this module can run today:
+The four RDF 1.1 suites this module can run:
 
 | Path | Contents |
 | --- | --- |
 | `rdf/rdf11/rdf-n-triples` | 72 `.nt` files, `manifest.ttl`, `README` |
 | `rdf/rdf11/rdf-n-quads` | 89 `.nq` files, `manifest.ttl`, `README` |
+| `rdf/rdf11/rdf-turtle` | 316 `.ttl` files, 114 `.nt` results, `manifest.ttl`, `README`, `LICENSE` |
+| `rdf/rdf11/rdf-trig` | 357 `.trig` files, 110 `.nq` results, `manifest.ttl`, `README`, `LICENSE` |
+
+Each directory is a faithful copy of the upstream one but for what is listed
+below, so re-vendoring is an extraction and not an edit. A few of the files a
+suite ships are named by no test in its own manifest; they are kept, and
+enumerated in `unreferenced` in `testsuite/conformance_test.go`, so that a file
+arriving unreferenced is noticed rather than assumed to be one of them.
 
 ## What is not, and why
 
-- **Every other suite.** Turtle, TriG, RDF/XML and the RDF 1.2 suites are not
-  vendored, because nothing here can read them yet. They arrive with the
-  stories that can.
+- **The RDF 1.2 suites, and RDF/XML.** Nothing here can read them yet. They
+  arrive with the stories that can.
 - **`TESTS.tar.gz` and `TESTS.zip`.** Archives of the same files that sit
   beside them, unpacked.
-- **`reports/`.** Conformance reports submitted by other implementations —
-  2.4 MB of HTML and JSON-LD saying how other parsers did, which is no part of
-  how this one does.
+- **`reports/`.** Conformance reports submitted by other implementations — 16
+  MB of HTML and JSON-LD saying how other parsers did, which is no part of how
+  this one does.
 
-## `manifest.ttl` is vendored but not read
+## `manifest.ttl` is what runs the suite
 
-The manifests are Turtle, which this module cannot parse yet — that is the
-bootstrap problem this harness exists to work around, and the reason it walks
-the directories instead. They are kept so that the manifest-driven harness can
-use them without re-vendoring anything, and so that a reader can check what the
-suite says a test is meant to do.
+Each suite describes itself in its `manifest.ttl`: what tests there are, what
+each is called, which document it reads, and what that document must mean. The
+harness runs the suites from those manifests, reading them with this module's
+own Turtle parser — see the package documentation in `testsuite/doc.go` for
+what that circularity costs and what holds it in place.
