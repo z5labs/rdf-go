@@ -110,6 +110,12 @@ const malformedLanguageTag = "the language tag is within LANG_DIR but not well-f
 // N-Quads canonicalization suite calling two of its own "C14N triple-term-03".
 // A key naming one of those would silently mean the other as well. An entry's
 // IRI is the node the manifest describes it as, so no two tests can share one.
+//
+// A Go subtest is still named by mf:name, which is what the W3C reports call a
+// test and so what a failure is looked up under. Where two share one, Go tells
+// them apart with a "#01" suffix that says nothing about which is which — so
+// every subtest logs its key, and a failing or skipped test names itself
+// unambiguously without the other thousand-odd having longer names for it.
 func testKey(entry manifestEntry) string {
 	return strings.TrimPrefix(string(entry.iri), publishedAt)
 }
@@ -311,7 +317,7 @@ func TestConformance(t *testing.T) {
 				if reason, ok := skipped[testKey(entry)]; ok {
 					skips++
 					t.Run(entry.name, func(t *testing.T) {
-						t.Skipf("skipped: %s", reason)
+						t.Skipf("%s skipped: %s", testKey(entry), reason)
 					})
 					continue
 				}
@@ -339,6 +345,7 @@ func TestConformance(t *testing.T) {
 // runEntry runs one manifest entry against the parsers of the suite's
 // specification version.
 func runEntry(t *testing.T, s suite, typ testType, entry manifestEntry) {
+	t.Log(testKey(entry))
 	if entry.comment != "" {
 		t.Log(entry.comment)
 	}
@@ -950,6 +957,8 @@ func TestRDF11ParsersRefuseRDF12Syntax(t *testing.T) {
 				}
 
 				t.Run(entry.name, func(t *testing.T) {
+					t.Log(testKey(entry))
+
 					f := formatOf(t, rdf11, typ.action)
 					action, base := localFile(t, entry.action)
 					_, err := decodeFile(action, base, f)
