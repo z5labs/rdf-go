@@ -2,6 +2,7 @@ package rdf
 
 import (
 	"cmp"
+	"encoding/binary"
 	"hash/fnv"
 	"slices"
 	"strconv"
@@ -193,11 +194,15 @@ func (g *isoGraph) neighbours(b BlankNode) []BlankNode {
 // refine colours the graph's blank nodes so that two nodes share a colour only
 // if no amount of looking at their surroundings tells them apart.
 //
-// Every node starts the same colour and is then recoloured by the multiset of
-// its incident triples, with each other blank node in them standing in as its
-// current colour. Recolouring can only split a class, never merge two, so the
-// partition gets finer every round until it stops changing — which it must do
-// within one round per blank node.
+// Every node starts the same colour and is then recoloured from its own
+// current colour together with the multiset of its incident triples, with each
+// other blank node in them standing in as its current colour. Carrying the old
+// colour forward means recolouring can only split a class, never merge two, so
+// the partition gets strictly finer every round until it stops changing —
+// which it must do within one round per blank node, there being no more splits
+// to make than nodes to separate. A round that leaves the number of classes
+// unchanged has therefore left the partition itself unchanged, which is what
+// makes counting them a sound test for having converged.
 //
 // The colouring is an isomorphism invariant: corresponding nodes of isomorphic
 // graphs are given equal colours, because the hash sees only ground terms and
@@ -227,10 +232,23 @@ func (g *isoGraph) refine() map[BlankNode]uint64 {
 	return colours
 }
 
-// signature hashes the multiset of triples incident to b, describing every
-// other blank node in them by its current colour and b itself by a marker, so
-// that a node pointing at itself is never confused with one pointing at a
-// like-coloured neighbour.
+// signature hashes b's current colour together with the multiset of triples
+// incident to it, describing every other blank node in them by its current
+// colour and b itself by a marker, so that a node pointing at itself is never
+// confused with one pointing at a like-coloured neighbour.
+//
+// Carrying b's own colour in is what makes this 1-WL rather than a bare
+// recolouring by neighbourhood: two nodes already told apart differ here
+// whatever their surroundings have since done, so a round can only ever split
+// a class.
+//
+// Recolouring by neighbourhood alone would in fact come to the same thing from
+// the seeding [isoGraph.refine] uses — merging two classes at one round takes
+// neighbours that merged at the round before, and that regress ends at the
+// first round, where every node shares one colour and a lone class has nothing
+// to merge with. Carrying the colour makes it a property of the step instead of
+// a fact about how the colouring was started, which is the assumption refine
+// would otherwise be resting its convergence test on from a distance.
 func (g *isoGraph) signature(b BlankNode, colours map[BlankNode]uint64) uint64 {
 	incident := g.incident[b]
 
@@ -251,6 +269,9 @@ func (g *isoGraph) signature(b BlankNode, colours map[BlankNode]uint64) uint64 {
 	slices.Sort(parts)
 
 	h := fnv.New64a()
+	var previous [8]byte
+	binary.LittleEndian.PutUint64(previous[:], colours[b])
+	h.Write(previous[:])
 	for _, part := range parts {
 		h.Write([]byte(part))
 		h.Write([]byte{0})

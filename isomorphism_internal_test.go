@@ -169,6 +169,107 @@ func TestRefinementSeparatesWhatItCan(t *testing.T) {
 	}
 }
 
+// TestRefinementOnlySplits pins the property refine relies on to know it has
+// converged: a round can split a colour class but never merge two, so counting
+// the classes is enough to tell that the partition has stopped changing.
+//
+// It is the node's own colour going into its signature that buys this outright,
+// rather than as a consequence of every node having started the same colour.
+// The distinction does not show up in the answers — it shows up in whether the
+// convergence test can be justified locally — so this guards the property
+// directly instead of trusting that it falls out.
+func TestRefinementOnlySplits(t *testing.T) {
+	// A chain anchored at one end by a ground term. The anchor separates the
+	// last node on the first round, that separates its predecessor on the
+	// next, and so on, so the partition really does split a step at a time
+	// rather than arriving all at once.
+	chain := NewGraph()
+	for i := range 6 {
+		triple := Triple{
+			Subject:   NewBlankNode("n" + strconv.Itoa(i)),
+			Predicate: "http://example.com/next",
+			Object:    NewBlankNode("n" + strconv.Itoa(i+1)),
+		}
+		if err := chain.Add(triple); err != nil {
+			t.Fatalf("Add(%s) = %v, want nil", triple, err)
+		}
+	}
+	anchor := Triple{
+		Subject:   NewBlankNode("n6"),
+		Predicate: "http://example.com/kind",
+		Object:    IRI("http://example.com/end"),
+	}
+	if err := chain.Add(anchor); err != nil {
+		t.Fatalf("Add(%s) = %v, want nil", anchor, err)
+	}
+
+	tests := []struct {
+		name  string
+		graph *Graph
+	}{
+		{name: "an anchored chain", graph: chain},
+		{name: "a cycle, which never splits at all", graph: mustCycle(t, "c", 6)},
+		{name: "indistinguishable leaves", graph: leafGraph(t, "l", 5)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := newIsoGraph(test.graph)
+
+			colours := make(map[BlankNode]uint64, len(g.blanks))
+			for _, b := range g.blanks {
+				colours[b] = 0
+			}
+
+			var splits int
+			for round := range len(g.blanks) {
+				next := make(map[BlankNode]uint64, len(g.blanks))
+				for _, b := range g.blanks {
+					next[b] = g.signature(b, colours)
+				}
+
+				// Refinement: any two nodes sharing a colour now must have
+				// shared one before. Nodes already told apart staying apart is
+				// the same statement read the other way.
+				for _, u := range g.blanks {
+					for _, v := range g.blanks {
+						if next[u] == next[v] && colours[u] != colours[v] {
+							t.Fatalf("round %d merged %s and %s, which had been separated", round, u, v)
+						}
+					}
+				}
+
+				if countDistinct(next) > countDistinct(colours) {
+					splits++
+				}
+				colours = next
+			}
+
+			if got, want := countDistinct(colours), countDistinct(g.refine()); got != want {
+				t.Errorf("running the rounds by hand found %d classes, refine() found %d", got, want)
+			}
+			t.Logf("%d rounds split the partition, ending with %d classes", splits, countDistinct(colours))
+		})
+	}
+}
+
+func mustCycle(t *testing.T, prefix string, n int) *Graph {
+	t.Helper()
+
+	g := NewGraph()
+	for i := range n {
+		triple := Triple{
+			Subject:   NewBlankNode(prefix + strconv.Itoa(i)),
+			Predicate: "http://example.com/next",
+			Object:    NewBlankNode(prefix + strconv.Itoa((i+1)%n)),
+		}
+		if err := g.Add(triple); err != nil {
+			t.Fatalf("Add(%s) = %v, want nil", triple, err)
+		}
+	}
+	return g
+}
+
 func mustGraph(t *testing.T, triples ...Triple) *Graph {
 	t.Helper()
 
