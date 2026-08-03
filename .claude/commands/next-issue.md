@@ -41,9 +41,9 @@ EnterWorktree(name: "issue-<n>")
 This branches fresh from `origin/main`, so previously merged work is present. Confirm with
 `git rev-parse --show-toplevel` and `git log --oneline -3`.
 
-Never commit, branch, or open a PR from the main checkout at
-`/home/carson/github.com/z5labs/rdf-go`. Avoid bare `git stash` — the stash stack is
-shared across worktrees.
+Never commit, branch, or open a PR from the main checkout — the directory holding
+`.claude/worktrees/`, which `git worktree list` reports first. Avoid bare `git stash`;
+the stash stack is shared across worktrees.
 
 If the repo root has a `CLAUDE.md`, read it now — it holds the implementation conventions
 later stories must follow.
@@ -188,6 +188,11 @@ gh api --method POST repos/z5labs/rdf-go/pulls/<pr>/comments/<comment-id>/replie
   -f body="<reply>" -q '.id'
 ```
 
+The `pulls/<pr>/` segment belongs there. Copilot has claimed on this very file that the
+route is `pulls/comments/<comment-id>/replies` and that the form above 404s; it is wrong,
+and the reply rebutting it was posted with the command as written. The shorter path is the
+`GET`/`PATCH`/`DELETE` route for a single review comment, not the reply route.
+
 If you push fixes, go back to step 6 and let checks re-run before merging.
 
 ## 9. Merge
@@ -219,8 +224,13 @@ The merged commit is already on `main`, so the worktree branch is redundant:
 ExitWorktree(action: "remove", discard_changes: true)
 ```
 
-Then `git -C /home/carson/github.com/z5labs/rdf-go checkout main && git pull` so the next
-iteration branches from the merged state.
+Then bring the main checkout up to date so the next iteration branches from the merged
+state. `git worktree list` reports it first, so it needs no hard-coded path:
+
+```
+git -C "$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)" checkout main
+git -C "$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)" pull
+```
 
 ## Report
 
