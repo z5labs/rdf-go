@@ -257,7 +257,8 @@ func TestTokenizeLangDir(t *testing.T) {
 		},
 		{
 			// The grammar admits any run of letters; that it has to read "ltr"
-			// or "rtl" is stated in prose, and is the parser's to enforce.
+			// or "rtl" is stated where RDF terms are built, and is enforced
+			// when the literal becomes one.
 			name: "a direction the grammar admits and the prose does not",
 			src:  `"text"@en--xyz .`,
 			expected: []ntriples.Token{

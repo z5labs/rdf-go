@@ -228,9 +228,10 @@ func (e InvalidCodePointError) Error() string {
 // so that everything but indentation survives a read and a write.
 //
 // Tokenizing says only that the terminals are well formed. Where each may
-// stand — a triple term in object position, a version directive before the
-// triples, a base direction only on a literal that has a language tag — is the
-// parser's to enforce.
+// stand — a triple term in object position, a version directive on a line of
+// its own — is [Parse]'s to enforce, and what a terminal may say — that a base
+// direction reads "ltr" or "rtl" — is settled where a term becomes an
+// [github.com/z5labs/rdf-go].Term, alongside the rule that an IRI is absolute.
 func Tokenize(r io.Reader) iter.Seq2[Token, error] {
 	return func(yield func(Token, error) bool) {
 		t := &tokenizer{
@@ -881,9 +882,9 @@ func blankNodeLabelThen(pos Pos, label []byte, trailing []Pos) tokenizerAction {
 // This is where RDF 1.2 extends the RDF 1.1 LANGTAG: a second hyphen ends the
 // subtags and begins the initial base direction, which the grammar leaves as
 // any run of letters. That the direction must read "ltr" or "rtl" is a
-// constraint the spec states in prose rather than in the grammar, and it is
-// the parser's to enforce — the tokenizer's job is to say where the terminal
-// ends.
+// constraint the spec states where it builds RDF terms rather than in the
+// grammar, and it is enforced there — the tokenizer's job is to say where the
+// terminal ends.
 //
 // A hyphen is therefore read with one character of lookahead: a second hyphen
 // is the direction's, and anything else belongs to another subtag. The

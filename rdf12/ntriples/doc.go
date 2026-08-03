@@ -16,5 +16,19 @@
 //   - the VERSION keyword, which introduces the directive announcing the RDF
 //     version a document targets.
 //
+// It reads in two ways, which share one implementation of the grammar.
+//
+// [Decode] streams: it yields each triple as an [github.com/z5labs/rdf-go].Triple
+// the moment its '.' is read, keeping nothing, so a document larger than
+// memory can be read. A triple term becomes an
+// [github.com/z5labs/rdf-go].TripleTerm, and a literal written with a base
+// direction becomes one typed rdf:dirLangString.
+//
+// [Parse] instead builds a [Document], a syntax tree whose every node carries
+// the position it was written at and which keeps what the grammar treats as
+// white space — the comments — along with the version directives a decoder has
+// no use for. [Triples] lowers such a tree the same way [Decode] does, for a
+// caller who wanted both.
+//
 // Everything RDF 1.1 N-Triples accepts is accepted here unchanged.
 package ntriples
