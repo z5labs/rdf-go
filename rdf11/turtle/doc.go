@@ -1,8 +1,8 @@
 // Package turtle implements RDF 1.1 Turtle, the readable member of the family
 // defined at https://www.w3.org/TR/turtle/.
 //
-// So far it reads: [Tokenize] turns a document into the terminals of the
-// grammar, and [Parse] turns those into a [Document] — a syntax tree that
+// Reading is in two layers. [Tokenize] turns a document into the terminals of
+// the grammar, and [Parse] turns those into a [Document] — a syntax tree that
 // keeps what the author wrote rather than what it means. A prefixed name stays
 // a prefix and a local name, the "a" keyword stays itself, and a collection
 // stays a list rather than becoming the triples it stands for, so that a
@@ -14,7 +14,15 @@
 // they imply. It streams, holding no more than the directives in scope and the
 // blank node labels seen so far, so a document larger than memory can be read.
 // [Lower] does the same to a [Document] already parsed, for a caller who wanted
-// the tree as well. Printing is still to come.
+// the tree as well.
+//
+// Writing mirrors the two. [Print] writes a [Document] back, abbreviations and
+// comments and all, so that [Parse] and Print together rewrite a document
+// rather than replace it. [Encode] writes data model triples, choosing how to
+// say them: statements about one subject gathered into one, rdf:type written
+// "a", and IRIs abbreviated against the prefixes a caller supplies with
+// [WithPrefixes]. Both lay a document out within a line width, configurable
+// along with the indentation by [WithLineWidth] and [WithIndent].
 //
 // Turtle is by far the largest of the four grammars this module reads. What it
 // adds to N-Triples is nearly everything that makes a document readable:
