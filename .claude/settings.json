@@ -6,6 +6,7 @@
       "Glob",
       "Grep",
       "Agent",
+      "ScheduleWakeup",
       "Edit(//home/carson/github.com/z5labs/rdf-go/**)",
       "Write(//home/carson/github.com/z5labs/rdf-go/**)",
       "Bash(go build*)",
