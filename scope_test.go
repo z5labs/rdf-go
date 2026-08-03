@@ -165,15 +165,24 @@ func TestBlankNodeScopeSourceLabel(t *testing.T) {
 			node: fresh,
 		},
 		{
-			name: "a node from another scope is unknown",
+			name: "a node from another scope carries a prefix this one never mints",
 			node: foreign,
 		},
 		{
-			name: "a node this package did not mint is unknown",
+			name: "a label this scope has not mapped",
 			node: rdf.NewBlankNode("b0"),
 		},
 		{
-			name: "the zero blank node is unknown",
+			name: "the zero blank node has no label to look up",
+		},
+		{
+			// The lookup is by label, so a node rebuilt from a mapped label is
+			// that node. Nothing about a blank node records which scope
+			// assembled it.
+			name:  "a node rebuilt from a mapped label is that node",
+			node:  rdf.NewBlankNode(mapped.Label()),
+			want:  "theLabelTheAuthorWrote",
+			found: true,
 		},
 	}
 

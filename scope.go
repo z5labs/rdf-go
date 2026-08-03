@@ -110,8 +110,12 @@ func (s *BlankNodeScope) New() BlankNode {
 // message can cite what its author typed rather than the label this scope
 // minted.
 //
-// It reports false for a node this scope did not mint, and for one minted by
-// [BlankNodeScope.New], which stands for no source label at all.
+// The lookup is by label, which is all a blank node carries. It reports false
+// for any label this scope has not mapped: one minted by
+// [BlankNodeScope.New], which stands for no source label at all, and one
+// belonging to another scope, whose prefix this scope never mints. A node the
+// caller assembled by hand is not treated differently — if its label is one
+// this scope mapped, it is that node.
 func (s *BlankNodeScope) SourceLabel(b BlankNode) (string, bool) {
 	label, ok := s.labels[b]
 	return label, ok
