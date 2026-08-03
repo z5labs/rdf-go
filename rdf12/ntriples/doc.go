@@ -30,5 +30,22 @@
 // no use for. [Triples] lowers such a tree the same way [Decode] does, for a
 // caller who wanted both.
 //
+// It writes in two ways to match.
+//
+// [Encode] writes triples back out in the canonical form of §3, which settles
+// the spacing, the escaping, the case of a language tag and the absence of
+// both comments and a VERSION directive, so that a ground graph written twice
+// is the same bytes whoever writes it. It does not settle which labels blank
+// nodes carry, and so does not make a graph with blank nodes byte-stable; see
+// [Encode]. [Print] writes a [Document] back out instead, keeping its comments
+// and its version directives where they were — which canonical form cannot do,
+// and a tool rewriting a file needs.
+//
+// What §3 asks of a quoted string is not what RDF 1.1 asked: seven characters
+// now take an ECHAR where four did, so a tab canonical N-Triples once wrote as
+// itself is written "\t" here. That is why this package renders a literal
+// itself rather than through [github.com/z5labs/rdf-go].Literal, whose String
+// method writes the RDF 1.1 form the rdf11 packages need.
+//
 // Everything RDF 1.1 N-Triples accepts is accepted here unchanged.
 package ntriples
