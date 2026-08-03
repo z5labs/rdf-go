@@ -248,9 +248,8 @@ gh pr edit <pr> --add-label auto-merge
 ```
 
 `.github/workflows/auto-merge.yaml` picks up the `labeled` event and enables native auto
-merge. GitHub then squash-merges the PR once every required status check passes — and
-leaves it open if one fails. The label cannot skip a check; it only says the human-judgment
-conditions below are satisfied.
+merge. GitHub squash-merges the PR once every required status check passes — or immediately,
+if they have already passed — and leaves it open if one fails.
 
 Apply the label only when **both** hold:
 
@@ -258,9 +257,15 @@ Apply the label only when **both** hold:
 2. A Copilot review actually **completed** — it either left comments (every one now
    addressed or answered) or reported that it generated none.
 
-The label means *"I verified these two things"*. It does not mean *"skip them"*. Required
-status checks are enforced by main's branch protection whatever you do; condition 2 is
-enforced by nothing but you.
+This is not a formality to route around: the label **is** the assertion that you verified
+both conditions, and adding it without having done so is the same failure as merging
+unreviewed work by hand. Required status checks are enforced by main's branch protection
+whatever you do; condition 2 is enforced by nothing but you.
+
+Keeping the merge in a workflow puts the policy somewhere it can be read and changed — the
+label gate plus the branch protection rule on `main` — rather than in a decision made
+mid-cycle and visible only in a transcript. It is also what lets the loop run unattended:
+an agent merging to `main` on its own is blocked by permission checks, and labelling is not.
 
 A review that was declined, never arrived, or was never requested because the request
 errored is **not** a completed review. In that case do **not** label the PR. Leave it open,
@@ -271,23 +276,52 @@ that merged on its own.
 If the PR is unreviewable because it exceeds the 300-file limit, say so in the `BLOCKED`
 report and suggest how the work could be split.
 
+Then confirm the label was acted on. There are **two** successful outcomes, and checking
+only for an armed auto-merge request will report a false failure on the more common one:
+
+```
+gh pr view <pr> --json state,autoMergeRequest -q '"\(.state) \(.autoMergeRequest.enabledAt // "not-armed")"'
+```
+
+- `MERGED …` — already merged. `gh pr merge --auto` merges immediately when the required
+  checks have already passed, and since this cycle labels only after they pass, this is the
+  usual result. `not-armed` beside `MERGED` is correct, not a fault.
+- `OPEN <timestamp>` — auto merge is armed and waiting on a check still running.
+- `OPEN not-armed` — the label was not acted on. Check the workflow run before doing
+  anything else:
+
+```
+gh run list --repo z5labs/rdf-go --workflow auto-merge.yaml --limit 1
+```
+
+A failed run means the workflow itself is broken — report it rather than falling back to a
+manual merge, which is what this whole step exists to avoid.
+
 ## 10. Wait for the merge, then clean up
 
-Labelling only **queues** the merge. The PR sits in `OPEN` with auto-merge armed until the
-required checks report, so cleaning up immediately would remove the worktree out from under
-a merge that has not happened yet.
-
-Wait for the PR to actually reach `MERGED` before touching anything. Use `Monitor` for the
-wait — Bash `run_in_background` has been observed exiting immediately without ever polling,
-which reads as "merged" when nothing was checked:
+The merge is asynchronous: labelling queues it, and GitHub completes it when the checks
+finish. Wait for it before touching the worktree. Pass the script below as the `command` of
+a `Monitor` call — not to Bash with `run_in_background`, which has been observed exiting
+immediately without ever polling:
 
 ```
-gh pr view <pr> --json state,mergedAt -q '"\(.state) \(.mergedAt)"'
+for i in $(seq 1 40); do
+  s=$(gh pr view <pr> --json state -q .state 2>/dev/null || echo "")
+  case "$s" in
+    MERGED) echo "PR <pr> MERGED"; exit 0;;
+    CLOSED) echo "PR <pr> CLOSED without merging"; exit 1;;
+  esac
+  sleep 15
+done
+echo "PR <pr> still OPEN after 10m"; exit 1
 ```
 
-If it stays `OPEN` after the checks have finished, something is wrong with the auto-merge
-setup — report it rather than merging by hand. If a required check fails, auto merge stays
-armed and the PR stays open; fix the failure, push, and it merges when the rerun is green.
+Both failure paths exit non-zero so an unmerged close or a timeout cannot be mistaken for
+success by anything that reads the exit code rather than the emitted line.
+
+If a required check fails, auto merge stays armed and the PR stays open; fix the failure,
+push, and it merges when the rerun is green. If it stays `OPEN` with nothing running,
+report it rather than merging by hand.
 
 Once the state really is `MERGED`, confirm the issue closed and drop the worktree:
 
