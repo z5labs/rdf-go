@@ -1,7 +1,8 @@
 // Package ntriples implements RDF 1.1 N-Triples, the line-based serialization
 // defined at https://www.w3.org/TR/n-triples/.
 //
-// So far it reads, in two ways that share one implementation of the grammar.
+// It reads in two ways, which share one implementation of the grammar, and
+// writes in two ways to match.
 //
 // [Decode] streams: it yields each statement as a triple of the
 // [github.com/z5labs/rdf-go] package the moment its '.' is read, keeping
@@ -14,7 +15,10 @@
 // document back needs. [Triples] lowers such a tree the same way [Decode]
 // does, for a caller who wanted both.
 //
-// Printing is still to come.
+// [Encode] writes triples back out in the canonical form of §4, which is what
+// makes output comparable between runs and between implementations. [Print]
+// writes a [Document] back out instead, keeping its comments where they were —
+// which canonical form cannot do, and a tool rewriting a file needs.
 //
 // N-Triples is the smallest complete grammar in the Turtle family: one triple
 // per line, every term written out in full, no prefixes and no abbreviations.
