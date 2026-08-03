@@ -302,16 +302,24 @@ func TestDecodeInvalidTerms(t *testing.T) {
 			wantErr: rdf.ErrReservedDatatype,
 		},
 		{
+			// The empty IRI is refused as the relative IRI it is, before the
+			// data model gets to object to it being empty.
 			name:    "an empty datatype iri",
 			src:     `<http://example.com/s> <http://example.com/p> "v"^^<> .`,
 			wantPos: pos(1, 52),
-			wantErr: rdf.ErrEmptyDatatype,
+			wantErr: ntriples.ErrRelativeIRI,
 		},
 		{
 			name:    "an empty predicate iri",
 			src:     `<http://example.com/s> <> "v" .`,
 			wantPos: pos(1, 24),
-			wantErr: rdf.ErrInvalidPredicate,
+			wantErr: ntriples.ErrRelativeIRI,
+		},
+		{
+			name:    "a relative iri",
+			src:     `<http://example.com/s> <http://example.com/p> <o> .`,
+			wantPos: pos(1, 47),
+			wantErr: ntriples.ErrRelativeIRI,
 		},
 	}
 

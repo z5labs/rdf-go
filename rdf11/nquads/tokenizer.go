@@ -927,13 +927,14 @@ func isPNCharsBase(r rune) bool {
 
 // isPNCharsU reports whether r is a PN_CHARS_U.
 //
-//	PN_CHARS_U ::= PN_CHARS_BASE | '_' | ':'
+//	PN_CHARS_U ::= PN_CHARS_BASE | '_'
 //
-// N-Quads admits a colon here, where Turtle does not: a Turtle blank node
-// label shares its grammar with a prefixed name, which needs the colon as a
-// separator.
+// A colon is not one. Some renderings of the grammar list it here, but the W3C
+// suite settles it: nt-syntax-bad-bnode-01 (_::a) and nt-syntax-bad-bnode-02
+// (_:abc:def) are both negative syntax tests, so a label carrying a colon is
+// not a label.
 func isPNCharsU(r rune) bool {
-	return isPNCharsBase(r) || r == '_' || r == ':'
+	return isPNCharsBase(r) || r == '_'
 }
 
 // isPNChars reports whether r is a PN_CHARS.
