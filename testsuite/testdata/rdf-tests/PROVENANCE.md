@@ -9,9 +9,14 @@ These files come from [w3c/rdf-tests](https://github.com/w3c/rdf-tests), pinned 
 Update by re-extracting that repository at a new commit and changing the SHA
 above and in `testsuite/conformance_test.go`, which asserts the two agree.
 
+RDF 1.2 is a Candidate Recommendation and its suites still move, so the pin is
+re-checked whenever they are extended. It was last re-synced on 2026-08-03,
+which found `main` still at the commit above — the RDF 1.2 suites arrived here
+at the same commit the RDF 1.1 ones were already vendored from.
+
 ## What is vendored
 
-The four RDF 1.1 suites this module can run:
+The six suites this module can run:
 
 | Path | Contents |
 | --- | --- |
@@ -19,6 +24,8 @@ The four RDF 1.1 suites this module can run:
 | `rdf/rdf11/rdf-n-quads` | 89 `.nq` files, `manifest.ttl`, `README` |
 | `rdf/rdf11/rdf-turtle` | 316 `.ttl` files, 114 `.nt` results, `manifest.ttl`, `README`, `LICENSE` |
 | `rdf/rdf11/rdf-trig` | 357 `.trig` files, 110 `.nq` results, `manifest.ttl`, `README`, `LICENSE` |
+| `rdf/rdf12/rdf-n-triples` | `manifest.ttl`, `README.md`, `syntax/` (29 `.nt` files), `c14n/` (81 `.nt` files) |
+| `rdf/rdf12/rdf-n-quads` | `manifest.ttl`, `README.md`, `syntax/` (27 `.nq` files), `c14n/` (81 `.nq` files) |
 
 Each directory is a faithful copy of the upstream one but for what is listed
 below, so re-vendoring is an extraction and not an edit. A few of the files a
@@ -26,10 +33,17 @@ suite ships are named by no test in its own manifest; they are kept, and
 enumerated in `unreferenced` in `testsuite/conformance_test.go`, so that a file
 arriving unreferenced is noticed rather than assumed to be one of them.
 
+An RDF 1.2 suite is three manifests rather than one: `syntax/manifest.ttl` for
+the syntax tests, `c14n/manifest.ttl` for the canonicalization tests, and the
+`manifest.ttl` above them, which declares no test itself and is an `mf:include`
+of those two and of the RDF 1.1 suite for the same syntax. Following that last
+include is why the RDF 1.1 suites are run twice: once by the RDF 1.1 parsers,
+and once by the RDF 1.2 ones, which must go on reading what RDF 1.1 wrote.
+
 ## What is not, and why
 
-- **The RDF 1.2 suites, and RDF/XML.** Nothing here can read them yet. They
-  arrive with the stories that can.
+- **The RDF 1.2 Turtle, TriG and semantics suites, and RDF/XML.** Nothing here
+  can read them yet. They arrive with the stories that can.
 - **`TESTS.tar.gz` and `TESTS.zip`.** Archives of the same files that sit
   beside them, unpacked.
 - **`reports/`.** Conformance reports submitted by other implementations — 16
