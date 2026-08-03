@@ -68,43 +68,43 @@ func TestQuadEqual(t *testing.T) {
 	}
 
 	tests := []struct {
-		name string
-		quad rdf.Quad
-		othe rdf.Quad
-		want bool
+		name  string
+		quad  rdf.Quad
+		other rdf.Quad
+		want  bool
 	}{
 		{
-			name: "same triple in the same named graph",
-			quad: rdf.Quad{Triple: triple, Graph: rdf.IRI("http://example.com/g")},
-			othe: rdf.Quad{Triple: triple, Graph: rdf.IRI("http://example.com/g")},
-			want: true,
+			name:  "same triple in the same named graph",
+			quad:  rdf.Quad{Triple: triple, Graph: rdf.IRI("http://example.com/g")},
+			other: rdf.Quad{Triple: triple, Graph: rdf.IRI("http://example.com/g")},
+			want:  true,
 		},
 		{
-			name: "same triple in the default graph",
-			quad: rdf.Quad{Triple: triple},
-			othe: rdf.Quad{Triple: triple},
-			want: true,
+			name:  "same triple in the default graph",
+			quad:  rdf.Quad{Triple: triple},
+			other: rdf.Quad{Triple: triple},
+			want:  true,
 		},
 		{
-			name: "same triple in different named graphs",
-			quad: rdf.Quad{Triple: triple, Graph: rdf.IRI("http://example.com/g")},
-			othe: rdf.Quad{Triple: triple, Graph: rdf.IRI("http://example.com/h")},
+			name:  "same triple in different named graphs",
+			quad:  rdf.Quad{Triple: triple, Graph: rdf.IRI("http://example.com/g")},
+			other: rdf.Quad{Triple: triple, Graph: rdf.IRI("http://example.com/h")},
 		},
 		{
-			name: "the default graph is not a named graph",
-			quad: rdf.Quad{Triple: triple},
-			othe: rdf.Quad{Triple: triple, Graph: rdf.IRI("http://example.com/g")},
+			name:  "the default graph is not a named graph",
+			quad:  rdf.Quad{Triple: triple},
+			other: rdf.Quad{Triple: triple, Graph: rdf.IRI("http://example.com/g")},
 		},
 		{
-			name: "an iri name never equals a blank node name",
-			quad: rdf.Quad{Triple: triple, Graph: rdf.IRI("g")},
-			othe: rdf.Quad{Triple: triple, Graph: rdf.NewBlankNode("g")},
+			name:  "an iri name never equals a blank node name",
+			quad:  rdf.Quad{Triple: triple, Graph: rdf.IRI("g")},
+			other: rdf.Quad{Triple: triple, Graph: rdf.NewBlankNode("g")},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := test.quad.Equal(test.othe); got != test.want {
+			if got := test.quad.Equal(test.other); got != test.want {
 				t.Errorf("Equal() = %t, want %t", got, test.want)
 			}
 		})

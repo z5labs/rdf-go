@@ -7,7 +7,8 @@ import (
 )
 
 // ErrInvalidGraphName is reported when a graph name is neither an IRI nor a
-// blank node. It is wrapped with context, so test with [errors.Is].
+// blank node. It is wrapped with the name that was actually there, so test
+// with [errors.Is] rather than ==.
 var ErrInvalidGraphName = errors.New("rdf: graph name must be an IRI or a blank node")
 
 // Quad is a triple paired with the name of the graph it belongs to.
@@ -67,6 +68,6 @@ func validateGraphName(name Term) error {
 	case nil, IRI, BlankNode:
 		return nil
 	default:
-		return fmt.Errorf("%w: got %T", ErrInvalidGraphName, name)
+		return fmt.Errorf("%w: got %s", ErrInvalidGraphName, describeTerm(name))
 	}
 }

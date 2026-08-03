@@ -2,6 +2,7 @@ package rdf_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	rdf "github.com/z5labs/rdf-go"
@@ -121,6 +122,61 @@ func TestTripleValidate(t *testing.T) {
 			err := test.triple.Validate()
 			if !errors.Is(err, test.want) {
 				t.Errorf("Validate() = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
+// TestValidateNamesTheOffendingTerm covers the context wrapped around the
+// position errors: a caller reading the message should see which term was
+// rejected, not only that one was.
+func TestValidateNamesTheOffendingTerm(t *testing.T) {
+	triple := rdf.Triple{
+		Subject:   rdf.IRI("http://example.com/s"),
+		Predicate: "http://example.com/p",
+		Object:    rdf.NewLiteral("o"),
+	}
+
+	tests := []struct {
+		name     string
+		validate func() error
+		want     string
+	}{
+		{
+			name: "a literal subject",
+			validate: func() error {
+				invalid := triple
+				invalid.Subject = rdf.NewLiteral("s")
+				return invalid.Validate()
+			},
+			want: `rdf.Literal "s"`,
+		},
+		{
+			name: "a missing subject",
+			validate: func() error {
+				invalid := triple
+				invalid.Subject = nil
+				return invalid.Validate()
+			},
+			want: "<nil>",
+		},
+		{
+			name: "a literal graph name",
+			validate: func() error {
+				return rdf.Quad{Triple: triple, Graph: rdf.NewLiteral("g")}.Validate()
+			},
+			want: `rdf.Literal "g"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.validate()
+			if err == nil {
+				t.Fatal("Validate() = nil, want an error")
+			}
+			if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("Validate() = %q, want it to mention %s", err, test.want)
 			}
 		})
 	}

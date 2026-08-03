@@ -7,7 +7,9 @@ import (
 )
 
 // Errors reported when a statement would violate a position constraint of the
-// RDF abstract syntax. Each is wrapped with context, so test with [errors.Is].
+// RDF abstract syntax. An error naming a term that could have been anything is
+// wrapped with the term that was actually there, so test with [errors.Is]
+// rather than ==.
 var (
 	// ErrInvalidSubject is reported when a subject is neither an IRI nor a
 	// blank node.
@@ -58,7 +60,7 @@ func (t Triple) Validate() error {
 	switch t.Subject.(type) {
 	case IRI, BlankNode:
 	default:
-		return fmt.Errorf("%w: got %T", ErrInvalidSubject, t.Subject)
+		return fmt.Errorf("%w: got %s", ErrInvalidSubject, describeTerm(t.Subject))
 	}
 	if t.Predicate == "" {
 		return ErrInvalidPredicate
@@ -124,4 +126,13 @@ func writeTerm(b *strings.Builder, t Term) {
 		return
 	}
 	b.WriteString(t.String())
+}
+
+// describeTerm renders t for an error message as its kind followed by its
+// canonical form, which together say both what was rejected and why.
+func describeTerm(t Term) string {
+	if t == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("%T %s", t, t)
 }
