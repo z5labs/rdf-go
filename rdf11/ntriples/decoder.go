@@ -98,7 +98,10 @@ func (d *decoder) statement(t *Triple) error {
 
 // comment drops the comment. Streaming reports what a document says, and a
 // comment says nothing.
-func (d *decoder) comment(*Comment) {}
+//
+// Taking the text raw is what makes dropping it free: a document thick with
+// comments costs a decoder nothing to read past.
+func (d *decoder) comment(Pos, []byte) {}
 
 // Triples lowers an already-parsed document into data model triples.
 //

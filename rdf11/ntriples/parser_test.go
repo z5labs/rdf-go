@@ -324,7 +324,7 @@ func TestParseGrammarErrors(t *testing.T) {
 			name: "a second statement on the same line",
 			src:  `_:a <http://example.com/p> _:b . _:c <http://example.com/q> _:d .`,
 			expectedErr: ntriples.UnexpectedTokenError{
-				Expected: []ntriples.TokenType{ntriples.TokenEOL},
+				Expected: []ntriples.TokenType{ntriples.TokenEOL, ntriples.TokenComment},
 				Actual: ntriples.Token{
 					Pos:   pos(1, 34),
 					Type:  ntriples.TokenBlankNodeLabel,

@@ -3,9 +3,10 @@
 //
 // So far it reads, in two ways that share one implementation of the grammar.
 //
-// [Decode] streams: it yields each statement as an [rdf.Triple] the moment its
-// '.' is read, keeping nothing, so a document larger than memory can be read.
-// That is what to reach for to load a dump.
+// [Decode] streams: it yields each statement as a triple of the
+// [github.com/z5labs/rdf-go] package the moment its '.' is read, keeping
+// nothing, so a document larger than memory can be read. That is what to
+// reach for to load a dump.
 //
 // [Parse] instead builds a [Document], a syntax tree whose every node carries
 // the position it was written at and which keeps the comments the grammar

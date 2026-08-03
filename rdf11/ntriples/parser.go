@@ -242,8 +242,13 @@ type sink interface {
 	// parsing, and the error is what parse reports.
 	statement(*Triple) error
 
-	// comment receives a parsed comment.
-	comment(*Comment)
+	// comment receives a comment at pos, with text as the tokenizer read it.
+	//
+	// The text is passed raw, and is only good until the next token is read.
+	// An implementation that keeps a comment has to copy it, and one that
+	// drops it — which streaming does — then pays nothing for a comment it
+	// was never going to look at.
+	comment(pos Pos, text []byte)
 }
 
 // statement appends the statement to the document.
@@ -252,9 +257,9 @@ func (d *Document) statement(t *Triple) error {
 	return nil
 }
 
-// comment appends the comment to the document.
-func (d *Document) comment(c *Comment) {
-	d.Comments = append(d.Comments, c)
+// comment appends a copy of the comment to the document.
+func (d *Document) comment(pos Pos, text []byte) {
+	d.Comments = append(d.Comments, &Comment{Pos: pos, Text: string(text)})
 }
 
 // parse reads the document in r, handing each statement and comment to s.
@@ -359,7 +364,7 @@ func parseDocument(p *parser, s sink) (parserAction[sink], error) {
 			p.discard()
 		case TokenComment:
 			p.discard()
-			s.comment(&Comment{Pos: tok.Pos, Text: string(tok.Value)})
+			s.comment(tok.Pos, tok.Value)
 		default:
 			return parseTriple, nil
 		}
@@ -425,7 +430,10 @@ func parseTripleEnd(p *parser, s sink) (parserAction[sink], error) {
 	case TokenEOL, TokenComment:
 		return parseDocument, nil
 	default:
-		return nil, UnexpectedTokenError{Expected: []TokenType{TokenEOL}, Actual: tok}
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenEOL, TokenComment},
+			Actual:   tok,
+		}
 	}
 }
 
