@@ -366,6 +366,9 @@ func keywordThen(pos Pos, name string, trailing []Pos) tokenizerAction {
 	switch {
 	case name == "a":
 		tok = Token{Pos: pos, Type: TokenA, Value: []byte("a")}
+	case name == "true", name == "false":
+		// Case-sensitive, where the SPARQL-style directives below are not.
+		tok = Token{Pos: pos, Type: TokenBoolean, Value: []byte(name)}
 	case strings.EqualFold(name, "prefix"):
 		// SPARQL-style, and case-insensitive where the '@' form is not.
 		tok = Token{Pos: pos, Type: TokenPrefix, Value: []byte(name)}

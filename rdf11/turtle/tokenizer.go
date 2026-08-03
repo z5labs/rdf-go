@@ -112,6 +112,14 @@ const (
 	// position.
 	TokenA
 
+	// TokenBoolean is a BooleanLiteral, written true or false.
+	//
+	//	BooleanLiteral ::= 'true' | 'false'
+	//
+	// Unlike the SPARQL-style directives, the two are case-sensitive: "TRUE"
+	// is a name the grammar has no use for, not a boolean.
+	TokenBoolean
+
 	// TokenPrefix is a prefix directive, written either "@prefix" or the
 	// SPARQL-style "PREFIX". Its value is the keyword as written, which is
 	// what tells the two apart: only the first is ended by a '.'.
@@ -177,6 +185,8 @@ func (tt TokenType) String() string {
 		return "Double"
 	case TokenA:
 		return "A"
+	case TokenBoolean:
+		return "Boolean"
 	case TokenPrefix:
 		return "Prefix"
 	case TokenBase:
