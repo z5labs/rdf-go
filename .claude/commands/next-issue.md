@@ -171,9 +171,14 @@ whose body declines the work — most often `"Copilot wasn't able to review this
 because it exceeds the maximum number of files (300)"` — and that decline satisfies the
 `length > 0` test above. Check the body before treating the review as real:
 
+Read the **most recent** Copilot review only. Reruns and pushed fixes leave older reviews
+in the array, so an earlier decline sitting beside a later completed review — or the
+reverse — is easy to misread:
+
 ```
 gh api repos/z5labs/rdf-go/pulls/<pr>/reviews \
-  --jq '.[] | select(.user.login | test("copilot";"i")) | .body'
+  --jq '[.[] | select(.user.login | test("copilot";"i"))]
+        | sort_by(.submitted_at) | last | .body // "no copilot review"'
 ```
 
 A body matching `wasn't able to review` is a **declined** review, not a completed one.
