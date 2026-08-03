@@ -166,8 +166,22 @@ done
 echo "copilot review timed out"; exit 1
 ```
 
-If the request itself errors (Copilot review not enabled for the org), note it in your
-report and continue without it — do not stall the cycle.
+A non-empty `reviews` array does **not** mean the PR was reviewed. Copilot posts a review
+whose body declines the work — most often `"Copilot wasn't able to review this pull request
+because it exceeds the maximum number of files (300)"` — and that decline satisfies the
+`length > 0` test above. Check the body before treating the review as real:
+
+```
+gh api repos/z5labs/rdf-go/pulls/<pr>/reviews \
+  --jq '.[] | select(.user.login | test("copilot";"i")) | .body'
+```
+
+A body matching `wasn't able to review` is a **declined** review, not a completed one.
+This happened on #57, where the vendored W3C suites pushed the PR past the file limit and
+the cycle merged with no review at all.
+
+If the review is declined, times out, or the request itself errors (Copilot review not
+enabled for the org), the cycle does **not** merge — see step 9.
 
 ## 8. Address review comments
 
@@ -197,7 +211,23 @@ If you push fixes, go back to step 6 and let checks re-run before merging.
 
 ## 9. Merge
 
-Only once checks are green and every Copilot comment is either addressed or answered:
+Merge only when **both** hold:
+
+1. Checks are green, and
+2. A Copilot review actually **completed** — it either left comments (every one now
+   addressed or answered) or reported that it generated none.
+
+A review that was declined, never arrived, or was never requested because the request
+errored is **not** a completed review. In that case do **not** merge. Leave the PR open,
+leave the worktree in place, and stop the cycle with a report beginning `BLOCKED` that
+names the PR and why the review is missing. Merging unreviewed work is the one step of
+this cycle that is not yours to take unilaterally — the user resumes it once they have
+looked.
+
+If the PR is unreviewable because it exceeds the 300-file limit, say so in the `BLOCKED`
+report and suggest how the work could be split; do not merge it anyway.
+
+Once both conditions hold:
 
 ```
 gh pr merge <pr> --squash
@@ -248,3 +278,7 @@ Stop and report — do not push through — if any of these happen:
 - Merging would require a force-push, a branch-protection override, or discarding someone
   else's commits.
 - `git status` in the main checkout is dirty with changes you did not make.
+- The Copilot review declined, timed out, or was never requested successfully (step 9).
+
+When you stop for one of these, begin the report with `BLOCKED` so the caller can tell a
+halted cycle from a finished one at a glance.
