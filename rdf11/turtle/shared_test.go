@@ -10,8 +10,9 @@ import (
 
 // The rules covered here came from the N-Triples tokenizer along with the rest
 // of the file they sit in. They are exercised again because the copies are
-// separate code until internal/lex takes them over, and a fix to one that
-// missed the other would show up nowhere else.
+// still separate code — internal/lex holds the characters they read, not the
+// rules that read them — and a fix to one that missed the other would show up
+// nowhere else.
 
 func TestTokenizeSharedTerminals(t *testing.T) {
 	testCases := []struct {

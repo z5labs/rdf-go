@@ -3,15 +3,15 @@
 //
 // That is not an accident of writing it twice. N-Quads adds one production to
 // N-Triples — graphLabel, which the parser handles — and changes none of the
-// terminals, so the two tokenizers have nothing to disagree about. Every
-// declaration below is a candidate for the internal/lex extraction, where the
-// Turtle and TriG tokenizers will want the same terminals again: Pos, Token,
-// TokenType and its String method, the five error types, the tokenizer struct
-// and its methods, the tokenizerAction combinators, and every rule and
-// character class from tokenizeDocument down.
+// terminals, so the two tokenizers have nothing to disagree about.
 //
-// Until then the duplication is deliberate rather than overlooked, and any fix
-// to one copy belongs in the other.
+// The character classes and the escape forms that all four syntaxes share have
+// since moved to internal/lex (#22). What is left here is duplicated
+// deliberately rather than overlooked: Pos, Token, TokenType and the error
+// types are this package's own API, which an internal package cannot hold, and
+// the tokenizer struct, the combinators and the rules built on them are what a
+// grammar is free to differ in. Any fix to one copy still belongs in the
+// other.
 
 package nquads
 
@@ -22,7 +22,8 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"unicode"
+
+	"github.com/z5labs/rdf-go/internal/lex"
 )
 
 // Pos is the position of a character in the input, counted in lines and in
@@ -604,93 +605,60 @@ func tokenizeStringLiteral(pos Pos) tokenizerAction {
 // An IRIREF admits only the first of the two, so echar says which caller this
 // is. Anything else after the backslash is an unexpected character, which is
 // how an unknown escape is reported.
+//
+// [lex.Escape] is what decodes the sequence. What this adds is the two
+// positions lex does not track: the backslash, for an escape that names no
+// character, and the character last read, for one that cannot appear where it
+// does.
 func (t *tokenizer) readEscape(pos Pos, echar bool) (rune, error) {
-	markerPos := t.pos
+	next, at := t.scan()
 
-	r, err := t.next()
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return 0, UnexpectedEndOfInputError{Pos: markerPos}
-		}
-		return 0, err
+	r, err := lex.Escape(next, echar)
+	if err == nil {
+		return r, nil
 	}
 
-	switch r {
-	case 'u':
-		return t.readCodePoint(pos, 4)
-	case 'U':
-		return t.readCodePoint(pos, 8)
+	var invalid lex.InvalidCodePointError
+	if errors.As(err, &invalid) {
+		return 0, InvalidCodePointError{Pos: pos, Code: invalid.Code}
 	}
-
-	if echar {
-		switch r {
-		case 't':
-			return '\t', nil
-		case 'b':
-			return '\b', nil
-		case 'n':
-			return '\n', nil
-		case 'r':
-			return '\r', nil
-		case 'f':
-			return '\f', nil
-		case '"':
-			return '"', nil
-		case '\'':
-			return '\'', nil
-		case '\\':
-			return '\\', nil
-		}
-	}
-
-	return 0, UnexpectedCharacterError{Pos: markerPos, R: r}
+	return 0, positioned(err, *at)
 }
 
-// readCodePoint reads the hexadecimal digits of a UCHAR and returns the
-// character they name. The backslash that began the escape is at pos.
-func (t *tokenizer) readCodePoint(pos Pos, digits int) (rune, error) {
-	var code uint32
+// scan returns a [lex.NextFunc] reading from t, together with the position of
+// the character it last read.
+//
+// That position is what internal/lex gives up by not reading the input itself:
+// it hands back the character it could not use and leaves saying where that
+// character stood to the caller. Reading is also where the input can run out,
+// which is this package's error to report rather than lex's, so the conversion
+// happens here too.
+func (t *tokenizer) scan() (lex.NextFunc, *Pos) {
+	at := new(Pos)
 
-	for range digits {
-		digitPos := t.pos
+	return func() (rune, error) {
+		*at = t.pos
 
 		r, err := t.next()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return 0, UnexpectedEndOfInputError{Pos: digitPos}
+				return 0, UnexpectedEndOfInputError{Pos: *at}
 			}
 			return 0, err
 		}
-
-		value, ok := hexValue(r)
-		if !ok {
-			return 0, UnexpectedCharacterError{Pos: digitPos, R: r}
-		}
-		code = code<<4 | uint32(value)
-	}
-
-	// Eight hex digits can name far more than Unicode has, and the surrogate
-	// range names nothing at all, so neither is simply written out as U+FFFD.
-	if code > unicode.MaxRune || (code >= 0xD800 && code <= 0xDFFF) {
-		return 0, InvalidCodePointError{Pos: pos, Code: code}
-	}
-	return rune(code), nil
+		return r, nil
+	}, at
 }
 
-// hexValue returns the value of a HEX digit.
-//
-//	HEX ::= [0-9] | [A-F] | [a-f]
-func hexValue(r rune) (int, bool) {
-	switch {
-	case r >= '0' && r <= '9':
-		return int(r - '0'), true
-	case r >= 'a' && r <= 'f':
-		return int(r-'a') + 10, true
-	case r >= 'A' && r <= 'F':
-		return int(r-'A') + 10, true
-	default:
-		return 0, false
+// positioned reports an error from internal/lex as this package's own. lex
+// hands back the character it could not use without saying where that
+// character stood; at is where it stood.
+func positioned(err error, at Pos) error {
+	var unexpected lex.UnexpectedCharacterError
+	if errors.As(err, &unexpected) {
+		return UnexpectedCharacterError{Pos: at, R: unexpected.R}
 	}
+	return err
 }
 
 // tokenizeBlankNodeLabel reads the rest of a BLANK_NODE_LABEL, the '_' having
@@ -719,7 +687,7 @@ func tokenizeBlankNodeLabel(pos Pos) tokenizerAction {
 
 		var label bytes.Buffer
 		err = t.copyAtLeastOne(&label, func(r rune) bool {
-			return isPNCharsU(r) || (r >= '0' && r <= '9')
+			return lex.IsPNCharsU(r) || (r >= '0' && r <= '9')
 		})
 		if err != nil {
 			return yieldFinalToken(
@@ -745,7 +713,7 @@ func tokenizeBlankNodeLabel(pos Pos) tokenizerAction {
 			switch {
 			case r == '.':
 				trailing = append(trailing, before.pos)
-			case isPNChars(r):
+			case lex.IsPNChars(r):
 				for range trailing {
 					label.WriteRune('.')
 				}
@@ -893,61 +861,5 @@ func tokenizeEOL(pos Pos, first rune) tokenizerAction {
 			Token{Pos: pos, Type: TokenEOL, Value: eol.Bytes()},
 			tokenizeDocument,
 		)
-	}
-}
-
-// isPNCharsBase reports whether r is a PN_CHARS_BASE.
-//
-//	PN_CHARS_BASE ::= [A-Z] | [a-z] | [#x00C0-#x00D6] | [#x00D8-#x00F6]
-//	                | [#x00F8-#x02FF] | [#x0370-#x037D] | [#x037F-#x1FFF]
-//	                | [#x200C-#x200D] | [#x2070-#x218F] | [#x2C00-#x2FEF]
-//	                | [#x3001-#xD7FF] | [#xF900-#xFDCF] | [#xFDF0-#xFFFD]
-//	                | [#x10000-#xEFFFF]
-func isPNCharsBase(r rune) bool {
-	switch {
-	case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z':
-		return true
-	case r >= 0x00C0 && r <= 0x00D6,
-		r >= 0x00D8 && r <= 0x00F6,
-		r >= 0x00F8 && r <= 0x02FF,
-		r >= 0x0370 && r <= 0x037D,
-		r >= 0x037F && r <= 0x1FFF,
-		r >= 0x200C && r <= 0x200D,
-		r >= 0x2070 && r <= 0x218F,
-		r >= 0x2C00 && r <= 0x2FEF,
-		r >= 0x3001 && r <= 0xD7FF,
-		r >= 0xF900 && r <= 0xFDCF,
-		r >= 0xFDF0 && r <= 0xFFFD,
-		r >= 0x10000 && r <= 0xEFFFF:
-		return true
-	default:
-		return false
-	}
-}
-
-// isPNCharsU reports whether r is a PN_CHARS_U.
-//
-//	PN_CHARS_U ::= PN_CHARS_BASE | '_'
-//
-// A colon is not one. Some renderings of the grammar list it here, but the W3C
-// suite settles it: nt-syntax-bad-bnode-01 (_::a) and nt-syntax-bad-bnode-02
-// (_:abc:def) are both negative syntax tests, so a label carrying a colon is
-// not a label.
-func isPNCharsU(r rune) bool {
-	return isPNCharsBase(r) || r == '_'
-}
-
-// isPNChars reports whether r is a PN_CHARS.
-//
-//	PN_CHARS ::= PN_CHARS_U | '-' | [0-9] | #x00B7 | [#x0300-#x036F]
-//	           | [#x203F-#x2040]
-func isPNChars(r rune) bool {
-	switch {
-	case isPNCharsU(r), r == '-', r >= '0' && r <= '9', r == 0x00B7:
-		return true
-	case r >= 0x0300 && r <= 0x036F, r >= 0x203F && r <= 0x2040:
-		return true
-	default:
-		return false
 	}
 }

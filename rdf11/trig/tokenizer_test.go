@@ -173,9 +173,9 @@ func TestTokenizeBracesInIRIs(t *testing.T) {
 }
 
 // The rest of this file covers the terminals TriG takes from Turtle unchanged.
-// They are exercised again here because the two tokenizers are separate code
-// until internal/lex takes the shared parts over, and a fix to one that missed
-// the other would show up nowhere else.
+// They are exercised again here because the two tokenizers are still separate
+// code — internal/lex holds the characters they read, not the rules that read
+// them — and a fix to one that missed the other would show up nowhere else.
 
 func TestTokenizeTurtleTerminals(t *testing.T) {
 	testCases := []struct {
