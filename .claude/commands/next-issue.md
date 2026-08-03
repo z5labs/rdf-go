@@ -1,11 +1,13 @@
 ---
-description: Take the next eligible story issue through the dev cycle — worktree, implement, test, PR, checks, Copilot review — then hand the PR back to the caller to merge.
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, EnterWorktree, Monitor, TaskCreate, TaskUpdate
+description: Take the next eligible story issue through the full dev cycle — worktree, implement, test, PR, checks, Copilot review — then label it for GitHub to auto merge.
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, EnterWorktree, ExitWorktree, Monitor, TaskCreate, TaskUpdate
 ---
 
-Take **exactly one** issue from backlog to a merge-ready PR, then stop. Do not start a
-second issue in the same invocation — the loop re-invokes this command for the next one.
-The merge itself belongs to the caller, not to you; see step 9.
+Take **exactly one** issue from backlog to a merged PR, then stop. Do not start a second
+issue in the same invocation — the loop re-invokes this command for the next one.
+
+You never run `gh pr merge`. You label the PR and GitHub merges it, gated by main's branch
+protection; see step 9.
 
 Repo: `z5labs/rdf-go`. Default branch: `main`. Milestone under construction: `v0.2.0`.
 
@@ -41,6 +43,18 @@ EnterWorktree(name: "issue-<n>")
 
 This branches fresh from `origin/main`, so previously merged work is present. Confirm with
 `git rev-parse --show-toplevel` and `git log --oneline -3`.
+
+`EnterWorktree` and `ExitWorktree` are **unavailable to a subagent running with a
+working-directory override** — the tools refuse rather than falling back. When that
+happens, use git directly and drive the worktree by absolute path:
+
+```
+git fetch origin
+git worktree add -b issue-<n> .claude/worktrees/issue-<n> origin/main
+```
+
+Branch from `origin/main`, not from local `main`: the main checkout is often behind, since
+earlier iterations merge through GitHub rather than locally.
 
 Never commit, branch, or open a PR from the main checkout — the directory holding
 `.claude/worktrees/`, which `git worktree list` reports first. Avoid bare `git stash`;
@@ -116,7 +130,11 @@ with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
 ## 6. Wait for checks
 
 Do not foreground a `sleep` loop. Either use `gh pr checks <pr> --watch --fail-fast`, or
-run the poll with Bash `run_in_background` so a single notification arrives on completion.
+poll with `Monitor`.
+
+Do **not** use Bash `run_in_background` for a wait loop. It has been observed exiting
+immediately without ever polling, which looks like a completed wait and reports whatever
+the first sample happened to be. `Monitor` is the tool for any wait in this cycle.
 
 - Exit 0 → green, continue.
 - "no checks reported" → CI is missing; investigate rather than treating it as a pass.
@@ -156,7 +174,8 @@ gh api --method POST repos/z5labs/rdf-go/pulls/<pr>/requested_reviewers \
 Either way, confirm the request took by checking that the login appears in
 `requested_reviewers`; an empty list means it did not.
 
-Then wait for the review to land. Run this with Bash `run_in_background`:
+Then wait for the review to land. Poll with `Monitor`, not Bash `run_in_background` — see
+the warning in step 6:
 
 ```
 for i in $(seq 1 40); do
@@ -213,89 +232,87 @@ route is `pulls/comments/<comment-id>/replies` and that the form above 404s; it 
 and the reply rebutting it was posted with the command as written. The shorter path is the
 `GET`/`PATCH`/`DELETE` route for a single review comment, not the reply route.
 
-If you push fixes, go back to step 6 and let checks re-run before handing the PR back.
+If you push fixes, go back to step 6 and let checks re-run before labelling the PR.
 
-## 9. Hand the PR back — do not merge it yourself
+## 9. Label the PR for auto merge — never merge it yourself
 
-**You never merge. The caller does.** Run `gh pr merge` and the cycle is wrong, even when
-everything is green. Your job ends with a PR that is ready for someone else to press the
-button.
+**Do not run `gh pr merge`.** Not with `--auto`, not without. An agent merging to `main` is
+what this whole arrangement exists to avoid: the permission classifier stops it, and a
+subagent that merges emits a security banner into its caller's context that blocks the
+caller's next agent spawn, killing the loop on its second iteration.
 
-The PR is ready to hand back only when **both** hold:
+Instead, hand the merge to GitHub by labelling the PR:
+
+```
+gh pr edit <pr> --add-label auto-merge
+```
+
+`.github/workflows/auto-merge.yaml` picks up the `labeled` event and enables native auto
+merge. GitHub then squash-merges the PR once every required status check passes — and
+leaves it open if one fails. The label cannot skip a check; it only says the human-judgment
+conditions below are satisfied.
+
+Apply the label only when **both** hold:
 
 1. Checks are green, and
 2. A Copilot review actually **completed** — it either left comments (every one now
    addressed or answered) or reported that it generated none.
 
-When both hold, leave the PR open, **leave the worktree in place**, and stop with a report
-whose first line is exactly:
-
-```
-READY TO MERGE #<pr> (closes #<n>)
-```
-
-The caller merges, then removes the worktree and updates the main checkout. Do not do any
-of that yourself — removing the worktree before the merge lands strands work if the merge
-fails, and the caller has no way to distinguish "ready" from "already merged" if you clean
-up first.
+The label means *"I verified these two things"*. It does not mean *"skip them"*. Required
+status checks are enforced by main's branch protection whatever you do; condition 2 is
+enforced by nothing but you.
 
 A review that was declined, never arrived, or was never requested because the request
-errored is **not** a completed review. In that case leave the PR open, leave the worktree
-in place, and stop with a report beginning `BLOCKED` that names the PR and why the review
-is missing — so the caller can tell a PR that needs a human look from one that is merely
-waiting on a button press.
+errored is **not** a completed review. In that case do **not** label the PR. Leave it open,
+leave the worktree in place, and stop with a report beginning `BLOCKED` that names the PR
+and why the review is missing, so the user can tell a PR that needs a human look from one
+that merged on its own.
 
 If the PR is unreviewable because it exceeds the 300-file limit, say so in the `BLOCKED`
 report and suggest how the work could be split.
 
-## Report
+## 10. Wait for the merge, then clean up
 
-Finish with a short status: the `READY TO MERGE #<pr> (closes #<n>)` or `BLOCKED` first
-line, then issue number and title, PR URL, check result, whether Copilot reviewed and what
-it flagged, and any judgment call that shaped the public API. If you stopped early, say
-exactly where and why.
+Labelling only **queues** the merge. The PR sits in `OPEN` with auto-merge armed until the
+required checks report, so cleaning up immediately would remove the worktree out from under
+a merge that has not happened yet.
 
-## For the caller — merge and clean up
-
-This section is **not** for the subagent running the cycle. It is what the caller does
-after a `READY TO MERGE` report comes back.
-
-Re-confirm the two conditions hold before merging — checks green and a completed Copilot
-review — rather than taking the report's word for it:
-
-```
-gh pr checks <pr>
-gh api repos/z5labs/rdf-go/pulls/<pr>/reviews \
-  --jq '[.[] | select(.user.login | test("copilot";"i"))]
-        | sort_by(.submitted_at) | last | .body // "no copilot review"'
-```
-
-Then merge:
-
-```
-gh pr merge <pr> --squash
-```
-
-The repo allows squash merges only and has `deleteBranchOnMerge` enabled, so the remote
-branch is removed for you. Do **not** pass `--delete-branch`: from inside a worktree it
-makes `gh` try to check out `main` locally and fail with
-`'main' is already used by worktree`. The merge still succeeds, but the error reads like
-a failure.
-
-Verify the merge and that the issue closed:
+Wait for the PR to actually reach `MERGED` before touching anything. Use `Monitor` for the
+wait — Bash `run_in_background` has been observed exiting immediately without ever polling,
+which reads as "merged" when nothing was checked:
 
 ```
 gh pr view <pr> --json state,mergedAt -q '"\(.state) \(.mergedAt)"'
+```
+
+If it stays `OPEN` after the checks have finished, something is wrong with the auto-merge
+setup — report it rather than merging by hand. If a required check fails, auto merge stays
+armed and the PR stays open; fix the failure, push, and it merges when the rerun is green.
+
+Once the state really is `MERGED`, confirm the issue closed and drop the worktree:
+
+```
 gh issue view <n> --json state -q .state
-```
-
-Then drop the now-redundant worktree and bring the main checkout up to date, so the next
-iteration branches from the merged state:
-
-```
 git worktree remove .claude/worktrees/issue-<n>
-git checkout main && git pull
 ```
+
+Then bring the main checkout up to date so the next iteration branches from the merged
+state. `git worktree list` reports it first, so it needs no hard-coded path:
+
+```
+git -C "$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)" checkout main
+git -C "$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)" pull
+```
+
+The repo allows squash merges only and has `deleteBranchOnMerge` enabled, so the remote
+branch is removed for you.
+
+## Report
+
+Finish with a short status: issue number and title, PR number and URL, check result,
+whether Copilot reviewed and what it flagged, whether the PR reached `MERGED`, and any
+judgment call that shaped the public API. If you stopped early, say exactly where and why —
+beginning the report with `BLOCKED`.
 
 ## Stop conditions
 

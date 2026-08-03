@@ -1,0 +1,40 @@
+name: Auto merge
+
+# Merge policy for the unattended dev cycle lives here, in version control,
+# rather than in a judgment an agent makes mid-run and that is visible only in
+# its transcript. The cycle labels a pull request `auto-merge` to say "I checked
+# the conditions"; what that label is allowed to do is this file plus the branch
+# protection rule on main.
+#
+# This is a gate, not a bypass. `--auto` cannot skip a required status check:
+# GitHub holds the pull request until every required check passes and leaves it
+# open — unmerged — if one fails. Required checks are configured in main's
+# branch protection (build and test, w3c conformance, staticcheck).
+#
+# Applying a label needs write access to the repository, so a pull request from
+# a fork cannot trigger this. That is also why the trigger is `pull_request` and
+# not `pull_request_target`: the latter runs with a writable token in the
+# context of the base repository, which is exactly what a fork should not reach.
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: enable auto merge
+    if: github.event.label.name == 'auto-merge'
+    runs-on: ubuntu-latest
+    steps:
+      # No checkout: the job only talks to the API, and giving it a working copy
+      # would hand a pull request's own contents a token it has no need of.
+      - name: Enable auto merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: gh pr merge "$PR" --repo "$REPO" --squash --auto
