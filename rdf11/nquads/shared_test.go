@@ -13,8 +13,9 @@ import (
 
 // The behaviour covered here is N-Triples' rather than N-Quads', reaching this
 // package by way of the shared grammar. It is exercised again because the two
-// copies are separate code until internal/lex takes them over, and a fix to
-// one that missed the other would show up nowhere else.
+// copies are still separate code — internal/lex holds the characters the two
+// grammars share, not the rules built from them — and a fix to one that missed
+// the other would show up nowhere else.
 
 func TestDecodeLiteralDatatypes(t *testing.T) {
 	testCases := []struct {

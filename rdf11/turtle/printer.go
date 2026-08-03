@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	rdf "github.com/z5labs/rdf-go"
+	"github.com/z5labs/rdf-go/internal/lex"
 	"github.com/z5labs/rdf-go/iri"
 	"github.com/z5labs/rdf-go/vocab"
 )
@@ -557,7 +558,7 @@ func escapeLocalName(s string) (string, bool) {
 
 		switch {
 		case r == '%':
-			if i+2 < len(s) && isHexDigit(s[i+1]) && isHexDigit(s[i+2]) {
+			if i+2 < len(s) && lex.IsHex(rune(s[i+1])) && lex.IsHex(rune(s[i+2])) {
 				b.WriteString(s[i : i+3])
 				i += 3
 				continue
@@ -582,12 +583,12 @@ func escapeLocalName(s string) (string, bool) {
 			// PN_CHARS_U, so it needs no escape anywhere.
 			b.WriteByte('_')
 
-		case isPNLocalEsc(r):
+		case lex.IsPNLocalEsc(r):
 			b.WriteByte('\\')
 			b.WriteRune(r)
 
-		case r == ':' || isPNChars(r):
-			if first && !(isPNCharsU(r) || r == ':' || isDigit(r)) {
+		case r == ':' || lex.IsPNChars(r):
+			if first && !(lex.IsPNCharsU(r) || r == ':' || lex.IsDigit(r)) {
 				// A PN_CHARS that is not a PN_CHARS_U — a combining mark, say —
 				// may not begin a local name, and has no escaped form.
 				ok = false
@@ -601,11 +602,6 @@ func escapeLocalName(s string) (string, bool) {
 		i += size
 	}
 	return b.String(), ok
-}
-
-func isHexDigit(c byte) bool {
-	_, ok := hexValue(rune(c))
-	return ok
 }
 
 func runeLen(s string) int { return utf8.RuneCountInString(s) }
@@ -1022,12 +1018,12 @@ func isValidPrefix(s string) bool {
 	for i, r := range s {
 		switch {
 		case i == 0:
-			if !isPNCharsBase(r) {
+			if !lex.IsPNCharsBase(r) {
 				return false
 			}
 		case r == '.':
 		default:
-			if !isPNChars(r) {
+			if !lex.IsPNChars(r) {
 				return false
 			}
 		}
@@ -1048,12 +1044,12 @@ func isValidBlankNodeLabel(s string) bool {
 	for i, r := range s {
 		switch {
 		case i == 0:
-			if !isPNCharsU(r) && !isDigit(r) {
+			if !lex.IsPNCharsU(r) && !lex.IsDigit(r) {
 				return false
 			}
 		case r == '.':
 		default:
-			if !isPNChars(r) {
+			if !lex.IsPNChars(r) {
 				return false
 			}
 		}

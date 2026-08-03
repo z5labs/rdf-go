@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"strings"
+
+	"github.com/z5labs/rdf-go/internal/lex"
 )
 
 // tokenizeDocument reads the next terminal of the document, dispatching on the
@@ -41,9 +43,9 @@ func tokenizeDocument(t *tokenizer, yield func(Token, error) bool) tokenizerActi
 			return tokenizeComment(pos)
 		case r == '[':
 			return tokenizeAnonOrOpenBracket(pos)
-		case r == ':' || isPNCharsBase(r):
+		case r == ':' || lex.IsPNCharsBase(r):
 			return tokenizeName(pos, r)
-		case r == '+' || r == '-' || isDigit(r):
+		case r == '+' || r == '-' || lex.IsDigit(r):
 			return tokenizeNumber(pos, r)
 		case r == '.':
 			return tokenizeDotOrDecimal(pos)
@@ -72,10 +74,6 @@ func tokenizeDocument(t *tokenizer, yield func(Token, error) bool) tokenizerActi
 // symbol emits a one-character terminal and carries on.
 func symbol(pos Pos, kind TokenType, text string) tokenizerAction {
 	return yieldTokenThen(Token{Pos: pos, Type: kind, Value: []byte(text)}, tokenizeDocument)
-}
-
-func isDigit(r rune) bool {
-	return r >= '0' && r <= '9'
 }
 
 // tokenizeString reads a string literal, its first quote having been read.
@@ -416,7 +414,7 @@ func tokenizeLocalName(pos Pos, prefix string) tokenizerAction {
 		if err != nil {
 			return yieldErrorOr(err, nil)
 		}
-		if !ok || !(isPNCharsU(r) || r == ':' || isDigit(r) || r == '%' || r == '\\') {
+		if !ok || !(lex.IsPNCharsU(r) || r == ':' || lex.IsDigit(r) || r == '%' || r == '\\') {
 			return yieldTokenThen(
 				Token{Pos: pos, Type: TokenPNameNS, Value: []byte(prefix)},
 				tokenizeDocument,
@@ -464,7 +462,7 @@ func (t *tokenizer) copyNameChars(dst *bytes.Buffer) ([]Pos, error) {
 		switch {
 		case r == '.':
 			trailing = append(trailing, before.pos)
-		case isPNChars(r):
+		case lex.IsPNChars(r):
 			for range trailing {
 				dst.WriteRune('.')
 			}
@@ -542,44 +540,31 @@ func (t *tokenizer) localNameChar(dst *bytes.Buffer, r rune) (bool, error) {
 			}
 			return false, err
 		}
-		if !isPNLocalEsc(e) {
+		if !lex.IsPNLocalEsc(e) {
 			return false, UnexpectedCharacterError{Pos: escPos, R: e}
 		}
 		dst.WriteRune(e)
 		return true, nil
 
 	case r == '%':
-		dst.WriteRune('%')
-		for range 2 {
-			digitPos := t.pos
+		next, at := t.scan()
 
-			h, err := t.next()
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					return false, UnexpectedEndOfInputError{Pos: digitPos}
-				}
-				return false, err
-			}
-			if _, ok := hexValue(h); !ok {
-				return false, UnexpectedCharacterError{Pos: digitPos, R: h}
-			}
-			dst.WriteRune(h)
+		hi, lo, err := lex.PercentEscape(next)
+		if err != nil {
+			return false, positioned(err, *at)
 		}
+		dst.WriteRune('%')
+		dst.WriteRune(hi)
+		dst.WriteRune(lo)
 		return true, nil
 
-	case isPNChars(r) || r == ':':
+	case lex.IsPNChars(r) || r == ':':
 		dst.WriteRune(r)
 		return true, nil
 
 	default:
 		return false, nil
 	}
-}
-
-// isPNLocalEsc reports whether r is one of the characters a backslash may
-// escape in a local name.
-func isPNLocalEsc(r rune) bool {
-	return strings.ContainsRune(`_~.-!$&'()*+,;=/?#@%`, r)
 }
 
 // tokenizeNumber reads a numeric literal, its first character having been
@@ -611,7 +596,7 @@ func tokenizeNumber(pos Pos, first rune) tokenizerAction {
 			if !ok {
 				return yieldErrorOr(UnexpectedEndOfInputError{Pos: signPos}, nil)
 			}
-			if !isDigit(r) && r != '.' {
+			if !lex.IsDigit(r) && r != '.' {
 				return yieldErrorOr(UnexpectedCharacterError{Pos: signPos, R: r}, nil)
 			}
 		}
@@ -628,7 +613,7 @@ func tokenizeDotOrDecimal(pos Pos) tokenizerAction {
 		if err != nil {
 			return yieldErrorOr(err, nil)
 		}
-		if !ok || !isDigit(r) {
+		if !ok || !lex.IsDigit(r) {
 			return symbol(pos, TokenDot, ".")
 		}
 
@@ -664,7 +649,7 @@ func readNumberBody(pos Pos, num *bytes.Buffer, seenDot bool) tokenizerAction {
 			}
 
 			switch {
-			case isDigit(r):
+			case lex.IsDigit(r):
 				if trailingDot != nil {
 					// The dot had a digit after it after all, so it was a
 					// decimal point — and, since every production allows only
@@ -723,7 +708,7 @@ func readNumberBody(pos Pos, num *bytes.Buffer, seenDot bool) tokenizerAction {
 // this far without a digit: a sign is followed by a digit or a point, and a
 // number opening with a point is only read once a digit is known to follow it.
 func hasDigit(b []byte) bool {
-	return bytes.ContainsFunc(b, isDigit)
+	return bytes.ContainsFunc(b, lex.IsDigit)
 }
 
 // readExponent reads the rest of an EXPONENT, its 'e' having been read.
@@ -741,7 +726,7 @@ func readExponent(pos Pos, num *bytes.Buffer) tokenizerAction {
 		}
 
 		digitsPos := t.pos
-		err = t.copyAtLeastOne(num, isDigit)
+		err = t.copyAtLeastOne(num, lex.IsDigit)
 		if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 			if errors.Is(err, io.EOF) {
 				return yieldErrorOr(UnexpectedEndOfInputError{Pos: digitsPos}, nil)
