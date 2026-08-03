@@ -73,7 +73,7 @@ func Resolve(base, ref string) (string, error) {
 	return transform(b, parse(ref)).String(), nil
 }
 
-// reference is a IRI reference split into the five components of RFC 3986 §3.
+// reference is an IRI reference split into the five components of RFC 3986 §3.
 //
 // Each of the components that the grammar lets be absent as well as empty
 // carries a flag saying which it is, because the algorithm turns on the
@@ -115,7 +115,7 @@ func parse(s string) reference {
 		s, r.scheme, r.hasScheme = after, scheme, true
 	}
 	if rest, found := strings.CutPrefix(s, "//"); found {
-		authority, path, _ := cutAuthority(rest)
+		authority, path := cutAuthority(rest)
 		s, r.authority, r.hasAuthority = path, authority, true
 	}
 	r.path = s
@@ -158,11 +158,16 @@ func cutScheme(s string) (scheme, rest string, found bool) {
 // cutAuthority splits the authority from the path that follows it. The
 // authority runs to the first "/", which begins the path, or to the end of the
 // input, leaving the path empty (RFC 3986 §3.2).
-func cutAuthority(s string) (authority, path string, found bool) {
+//
+// There is nothing to report as found or not: the caller has already seen the
+// "//" that introduces an authority, and everything up to the first "/" is one
+// however empty it turns out to be. "//" alone is an authority of "" with an
+// empty path, which is not the same as having no authority.
+func cutAuthority(s string) (authority, path string) {
 	if i := strings.IndexByte(s, '/'); i >= 0 {
-		return s[:i], s[i:], true
+		return s[:i], s[i:]
 	}
-	return s, "", false
+	return s, ""
 }
 
 // String recomposes the components into an IRI, following RFC 3986 §5.3.
