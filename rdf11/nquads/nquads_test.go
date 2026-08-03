@@ -370,8 +370,8 @@ func TestDecodeInvalidTerms(t *testing.T) {
 	if got, want := invalid.Pos, pos(1, 14); got != want {
 		t.Errorf("Pos = %s, want %s", got, want)
 	}
-	if !errors.Is(err, rdf.ErrInvalidPredicate) {
-		t.Errorf("Decode() error = %v, want it to wrap %v", err, rdf.ErrInvalidPredicate)
+	if !errors.Is(err, nquads.ErrRelativeIRI) {
+		t.Errorf("Decode() error = %v, want it to wrap %v", err, nquads.ErrRelativeIRI)
 	}
 }
 

@@ -426,3 +426,32 @@ func quoted(ref string) string {
 	}
 	return ref
 }
+
+func TestIsAbsolute(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want bool
+	}{
+		{name: "an http iri", s: "http://example.com/a", want: true},
+		{name: "a urn", s: "urn:isbn:0451450523", want: true},
+		{name: "a mailto", s: "mailto:someone@example.com", want: true},
+		{name: "an iri with a fragment is still absolute", s: "http://example.com/a#frag", want: true},
+		{name: "a scheme and nothing else", s: "http:", want: true},
+		{name: "an empty iri", s: ""},
+		{name: "a relative path", s: "o"},
+		{name: "a rooted path", s: "/a/b"},
+		{name: "a fragment alone", s: "#frag"},
+		{name: "a scheme relative reference", s: "//example.com/a"},
+		{name: "a leading segment that cannot be a scheme", s: "2011:a"},
+		{name: "a colon a slash puts out of reach", s: "a/b:c"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := iri.IsAbsolute(test.s); got != test.want {
+				t.Errorf("IsAbsolute(%q) = %t, want %t", test.s, got, test.want)
+			}
+		})
+	}
+}

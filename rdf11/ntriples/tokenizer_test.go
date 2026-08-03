@@ -319,13 +319,6 @@ func TestTokenizeBlankNodeLabels(t *testing.T) {
 			},
 		},
 		{
-			name: "a label may begin with a colon, which Turtle does not allow",
-			src:  `_::a`,
-			expected: []ntriples.Token{
-				tok(1, 1, ntriples.TokenBlankNodeLabel, ":a"),
-			},
-		},
-		{
 			name: "a label may contain hyphens and digits",
 			src:  `_:a-1-b`,
 			expected: []ntriples.Token{
@@ -425,6 +418,16 @@ func TestTokenizeErrors(t *testing.T) {
 			name:        "a blank node label that begins with a hyphen",
 			src:         `_:-a`,
 			expectedErr: ntriples.UnexpectedCharacterError{Pos: ntriples.Pos{Line: 1, Column: 3}, R: '-'},
+		},
+		{
+			name:        "a colon may not appear in a label",
+			src:         `_::a`,
+			expectedErr: ntriples.UnexpectedCharacterError{Pos: ntriples.Pos{Line: 1, Column: 3}, R: ':'},
+		},
+		{
+			name:        "nor part way through one",
+			src:         `_:abc:def`,
+			expectedErr: ntriples.UnexpectedCharacterError{Pos: ntriples.Pos{Line: 1, Column: 6}, R: ':'},
 		},
 		{
 			name:        "a single caret",

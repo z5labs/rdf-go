@@ -7,6 +7,7 @@ import (
 	"iter"
 
 	rdf "github.com/z5labs/rdf-go"
+	"github.com/z5labs/rdf-go/iri"
 )
 
 // InvalidTermError is reported when a term the grammar accepts does not
@@ -27,6 +28,11 @@ func (e InvalidTermError) Error() string {
 
 // Unwrap returns the underlying error.
 func (e InvalidTermError) Unwrap() error { return e.Err }
+
+// ErrRelativeIRI is reported when an IRI is not absolute. Every IRI in the
+// RDF abstract syntax must be (RDF 1.1 Concepts §3.2), and neither N-Triples
+// nor N-Quads has a base to resolve a relative one against.
+var ErrRelativeIRI = errors.New("nquads: IRI must be absolute")
 
 // errConsumerStopped unwinds the parser when the caller stops ranging over
 // [Decode]. It never reaches the caller: it is the parser being told there is
@@ -140,10 +146,20 @@ func lower(t *Quad, scope *rdf.BlankNodeScope) (rdf.Quad, error) {
 		return rdf.Quad{}, err
 	}
 
+	subject, err := lowerSubject(t.Subject, scope)
+	if err != nil {
+		return rdf.Quad{}, err
+	}
+
+	predicate, err := lowerIRI(t.Predicate)
+	if err != nil {
+		return rdf.Quad{}, err
+	}
+
 	quad := rdf.Quad{
 		Triple: rdf.Triple{
-			Subject:   lowerSubject(t.Subject, scope),
-			Predicate: rdf.IRI(t.Predicate.Value),
+			Subject:   subject,
+			Predicate: predicate,
 			Object:    object,
 		},
 	}
@@ -151,7 +167,9 @@ func lower(t *Quad, scope *rdf.BlankNodeScope) (rdf.Quad, error) {
 	// A statement with no label belongs to the default graph, which the data
 	// model also writes as a nil graph, so there is nothing to translate.
 	if t.Graph != nil {
-		quad.Graph = lowerSubject(t.Graph, scope)
+		if quad.Graph, err = lowerSubject(t.Graph, scope); err != nil {
+			return rdf.Quad{}, err
+		}
 	}
 
 	// The syntax tree already rules out a literal subject, a blank node
@@ -163,18 +181,27 @@ func lower(t *Quad, scope *rdf.BlankNodeScope) (rdf.Quad, error) {
 	return quad, nil
 }
 
+// lowerIRI turns a parsed IRI reference into a data model IRI, refusing one
+// that is not absolute.
+func lowerIRI(node *IRIRef) (rdf.IRI, error) {
+	if !iri.IsAbsolute(node.Value) {
+		return "", InvalidTermError{Pos: node.Pos, Err: ErrRelativeIRI}
+	}
+	return rdf.IRI(node.Value), nil
+}
+
 // lowerSubject turns a parsed subject into a data model term.
 //
-// It cannot fail, and so does not pretend it might. The only term with
-// anything for the data model to refuse is a literal, and a literal is not a
-// [SubjectTerm] — the grammar's restriction on subjects and graph labels alike,
+// It can fail only on a relative IRI. A literal, the other term the data model
+// has something to say about, is not a [SubjectTerm] — the grammar's
+// restriction on subjects and graph labels alike,
 // which the syntax tree already carries in its types, is what makes this total.
-func lowerSubject(subject SubjectTerm, scope *rdf.BlankNodeScope) rdf.Term {
+func lowerSubject(subject SubjectTerm, scope *rdf.BlankNodeScope) (rdf.Term, error) {
 	switch s := subject.(type) {
 	case *IRIRef:
-		return rdf.IRI(s.Value)
+		return lowerIRI(s)
 	case *BlankNode:
-		return scope.Node(s.Label)
+		return scope.Node(s.Label), nil
 	default:
 		panic(fmt.Sprintf("unknown subject node: %T", subject))
 	}
@@ -184,7 +211,7 @@ func lowerSubject(subject SubjectTerm, scope *rdf.BlankNodeScope) rdf.Term {
 func lowerTerm(term Term, scope *rdf.BlankNodeScope) (rdf.Term, error) {
 	switch t := term.(type) {
 	case *IRIRef:
-		return rdf.IRI(t.Value), nil
+		return lowerIRI(t)
 	case *BlankNode:
 		// The scope is what keeps this document's labels from colliding with
 		// another's, and what makes two mentions of one label the same node.
@@ -219,7 +246,12 @@ func lowerLiteral(l *Literal) (rdf.Literal, error) {
 		return literal, nil
 
 	case l.Datatype != nil:
-		literal, err := rdf.NewTypedLiteral(l.Value, rdf.IRI(l.Datatype.Value))
+		datatype, err := lowerIRI(l.Datatype)
+		if err != nil {
+			return rdf.Literal{}, err
+		}
+
+		literal, err := rdf.NewTypedLiteral(l.Value, datatype)
 		if err != nil {
 			return rdf.Literal{}, InvalidTermError{Pos: l.Datatype.Pos, Err: err}
 		}

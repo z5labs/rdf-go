@@ -332,3 +332,19 @@ func truncateLastSegment(out []byte) []byte {
 	}
 	return out[:0]
 }
+
+// IsAbsolute reports whether s is an absolute IRI: one carrying its own
+// scheme, which is what makes it identify a resource without reference to
+// anything else.
+//
+// RDF requires this of every IRI in the abstract syntax (RDF 1.1 Concepts
+// §3.2). A relative reference such as <s> or <#frag> means nothing on its own,
+// so a document containing one is either in error or is relying on a base to
+// resolve it — which N-Triples and N-Quads have no way to state, and Turtle
+// and TriG do.
+//
+// A fragment is permitted. It is the scheme that makes an IRI absolute here,
+// not the stricter absolute-URI of RFC 3986 §4.3, which excludes one.
+func IsAbsolute(s string) bool {
+	return parse(s).hasScheme
+}
