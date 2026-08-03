@@ -654,6 +654,10 @@ func readNumberBody(pos Pos, num *bytes.Buffer, seenDot bool) tokenizerAction {
 			r, err := t.next()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
+					if !hasDigit(num.Bytes()) {
+						// "+." or "-.", cut off where a digit was required.
+						return yieldErrorOr(UnexpectedEndOfInputError{Pos: t.pos}, nil)
+					}
 					return numberThen(pos, num, kind, trailingDot, nil)
 				}
 				return yieldErrorOr(err, nil)
@@ -663,9 +667,11 @@ func readNumberBody(pos Pos, num *bytes.Buffer, seenDot bool) tokenizerAction {
 			case isDigit(r):
 				if trailingDot != nil {
 					// The dot had a digit after it after all, so it was a
-					// decimal point.
+					// decimal point — and, since every production allows only
+					// one, the last one this number may hold.
 					num.WriteRune('.')
 					trailingDot = nil
+					seenDot = true
 					kind = TokenDecimal
 				}
 				num.WriteRune(r)
@@ -683,10 +689,20 @@ func readNumberBody(pos Pos, num *bytes.Buffer, seenDot bool) tokenizerAction {
 					num.WriteRune('.')
 					trailingDot = nil
 				}
+				if !hasDigit(num.Bytes()) {
+					// "-.e6": every form of DOUBLE has digits before the
+					// exponent, and a sign and a point are not digits.
+					return yieldErrorOr(UnexpectedCharacterError{Pos: before.pos, R: r}, nil)
+				}
 				num.WriteRune(r)
 				return readExponent(pos, num)
 
 			default:
+				if !hasDigit(num.Bytes()) {
+					// "-.x": the sign and the point were read and the digit
+					// they promised is not what arrived.
+					return yieldErrorOr(UnexpectedCharacterError{Pos: before.pos, R: r}, nil)
+				}
 				if err := t.backup(before); err != nil {
 					return yieldErrorOr(err, nil)
 				}
@@ -694,6 +710,20 @@ func readNumberBody(pos Pos, num *bytes.Buffer, seenDot bool) tokenizerAction {
 			}
 		}
 	}
+}
+
+// hasDigit reports whether the number read so far holds a digit.
+//
+//	INTEGER  ::= [+-]? [0-9]+
+//	DECIMAL  ::= [+-]? [0-9]* '.' [0-9]+
+//	DOUBLE   ::= [+-]? ([0-9]+ '.' [0-9]* EXPONENT | '.' [0-9]+ EXPONENT | [0-9]+ EXPONENT)
+//
+// All three require one, so a sign and a decimal point on their own are not a
+// number however the rest of the input goes on. Only "+." and "-." can get
+// this far without a digit: a sign is followed by a digit or a point, and a
+// number opening with a point is only read once a digit is known to follow it.
+func hasDigit(b []byte) bool {
+	return bytes.ContainsFunc(b, isDigit)
 }
 
 // readExponent reads the rest of an EXPONENT, its 'e' having been read.

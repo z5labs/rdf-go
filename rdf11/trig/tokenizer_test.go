@@ -293,6 +293,32 @@ func TestTokenizeTurtleTerminals(t *testing.T) {
 			},
 		},
 		{
+			// A number holds one decimal point, so the second ends this one
+			// and begins the next, exactly as it does in ".5.5".
+			name: "a second decimal point begins a second number",
+			src:  "1.2.3",
+			expected: []trig.Token{
+				tok(1, 1, trig.TokenDecimal, "1.2"),
+				tok(1, 4, trig.TokenDecimal, ".3"),
+			},
+		},
+		{
+			name: "a second decimal point where the first began the number",
+			src:  ".5.5",
+			expected: []trig.Token{
+				tok(1, 1, trig.TokenDecimal, ".5"),
+				tok(1, 3, trig.TokenDecimal, ".5"),
+			},
+		},
+		{
+			name: "a decimal and the dot that ends a statement",
+			src:  "1.2.",
+			expected: []trig.Token{
+				tok(1, 1, trig.TokenDecimal, "1.2"),
+				tok(1, 4, trig.TokenDot, "."),
+			},
+		},
+		{
 			name: "the booleans are case sensitive",
 			src:  "true false",
 			expected: []trig.Token{
@@ -462,6 +488,29 @@ func TestTokenizeErrors(t *testing.T) {
 			name:        "an exponent with no digits",
 			src:         "1e",
 			expectedErr: trig.UnexpectedEndOfInputError{Pos: trig.Pos{Line: 1, Column: 3}},
+		},
+		{
+			// Every numeric production requires a digit, so a sign and a
+			// decimal point on their own are not a number, however the rest of
+			// the input goes on.
+			name:        "a minus sign and a point at the end of the input",
+			src:         "-.",
+			expectedErr: trig.UnexpectedEndOfInputError{Pos: trig.Pos{Line: 1, Column: 3}},
+		},
+		{
+			name:        "a plus sign and a point at the end of the input",
+			src:         "+.",
+			expectedErr: trig.UnexpectedEndOfInputError{Pos: trig.Pos{Line: 1, Column: 3}},
+		},
+		{
+			name:        "a sign and a point followed by something that is not a digit",
+			src:         "-.x",
+			expectedErr: trig.UnexpectedCharacterError{Pos: trig.Pos{Line: 1, Column: 3}, R: 'x'},
+		},
+		{
+			name:        "a sign and a point followed by an exponent",
+			src:         "-.e6",
+			expectedErr: trig.UnexpectedCharacterError{Pos: trig.Pos{Line: 1, Column: 3}, R: 'e'},
 		},
 		{
 			name:        "a prefix ending in a dot",
