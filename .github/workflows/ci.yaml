@@ -31,8 +31,46 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # -coverpkg=./... credits a package for what every test binary reaches in
+      # it, not only its own tests. The conformance suites live in one package
+      # and drive all four syntaxes, so without it the parsers they exercise
+      # would read as untested.
       - name: Test
-        run: go test -race ./...
+        run: go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage.out ./...
+
+      - name: Report coverage per package
+        run: |
+          {
+            echo "### Coverage by package"
+            echo
+            awk -f .github/scripts/cover.awk coverage.out
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the coverage profile
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage
+          path: coverage.out
+          if-no-files-found: error
+
+  conformance:
+    name: w3c conformance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      # The vendored W3C suites are read from their manifests, so a test the
+      # suites add is a test this runs. It is its own job, rather than part of
+      # the run above, so that a conformance regression is legible as one on
+      # the pull request instead of as a line in the middle of the test log.
+      - name: Run the W3C conformance suites
+        run: go test -race -count=1 ./testsuite/...
 
   staticcheck:
     name: staticcheck
