@@ -654,22 +654,54 @@ func TestEncodeErrors(t *testing.T) {
 		}
 	})
 
+	// Output is buffered, so what a caller receives when encoding stops early
+	// would otherwise depend on where the buffer happened to fill: everything
+	// up to the last flush for a long document, nothing at all for a short
+	// one. Both lengths are checked here for that reason.
 	t.Run("the statements before an invalid one are still written", func(t *testing.T) {
-		valid := rdf.Triple{
-			Subject:   rdf.IRI("http://example.com/s"),
-			Predicate: "http://example.com/p",
-			Object:    rdf.IRI("http://example.com/o"),
-		}
 		invalid := rdf.Triple{
 			Subject:   rdf.IRI("http://example.com/s"),
 			Predicate: "",
 			Object:    rdf.IRI("http://example.com/o"),
 		}
 
-		var b strings.Builder
-		err := ntriples.Encode(&b, slices.Values([]rdf.Triple{valid, invalid}))
-		if !errors.Is(err, rdf.ErrInvalidPredicate) {
-			t.Errorf("Encode() = %v, want %v", err, rdf.ErrInvalidPredicate)
+		valid := func(i int) rdf.Triple {
+			return rdf.Triple{
+				Subject:   rdf.IRI(fmt.Sprintf("http://example.com/s%d", i)),
+				Predicate: "http://example.com/p",
+				Object:    rdf.IRI("http://example.com/o"),
+			}
+		}
+
+		testCases := []struct {
+			name   string
+			before int
+		}{
+			{name: "too few to fill the buffer", before: 1},
+			{name: "more than fills the buffer", before: 500},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				triples := make([]rdf.Triple, 0, tc.before+1)
+				var want strings.Builder
+				for i := range tc.before {
+					triples = append(triples, valid(i))
+					want.WriteString(valid(i).String())
+					want.WriteByte('\n')
+				}
+				triples = append(triples, invalid)
+
+				var got strings.Builder
+				err := ntriples.Encode(&got, slices.Values(triples))
+				if !errors.Is(err, rdf.ErrInvalidPredicate) {
+					t.Errorf("Encode() = %v, want %v", err, rdf.ErrInvalidPredicate)
+				}
+				if got.String() != want.String() {
+					t.Errorf("Encode() wrote %d bytes, want the %d written before the invalid statement",
+						got.Len(), want.Len())
+				}
+			})
 		}
 	})
 }

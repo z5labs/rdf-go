@@ -15,8 +15,11 @@
 // document back needs. [Triples] lowers such a tree the same way [Decode]
 // does, for a caller who wanted both.
 //
-// [Encode] writes triples back out in the canonical form of §4, which is what
-// makes output comparable between runs and between implementations. [Print]
+// [Encode] writes triples back out in the canonical form of §4, which settles
+// the spacing, the escaping and the absence of comments, so that a ground
+// graph written twice is the same bytes whoever writes it. It does not settle
+// which labels blank nodes carry, and so does not make a graph with blank
+// nodes byte-stable; see [Encode]. [Print]
 // writes a [Document] back out instead, keeping its comments where they were —
 // which canonical form cannot do, and a tool rewriting a file needs.
 //

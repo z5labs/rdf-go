@@ -206,6 +206,11 @@ func literal(l *Literal) string {
 // [rdf.Triple.Validate] if a triple could not be written as N-Triples at all —
 // a literal subject cannot, and writing it anyway would produce a document
 // this package could not read back.
+//
+// Stopping early does not discard what came before it: the statements written
+// before the offending one reach w, and only the offending one and those after
+// it do not. A caller that must not act on a partial document should encode
+// into a buffer of its own and write that on once Encode returns nil.
 func Encode(w io.Writer, triples iter.Seq[rdf.Triple]) error {
 	buf := bufio.NewWriter(w)
 
@@ -221,8 +226,13 @@ func Encode(w io.Writer, triples iter.Seq[rdf.Triple]) error {
 			break
 		}
 	}
-	if err != nil {
-		return err
+
+	// Flush even when stopping early, so that the statements written before
+	// the offending one reach w. Without this what a caller receives would
+	// depend on where the buffer happened to fill: everything up to the last
+	// flush for a long document, and nothing at all for a short one.
+	if flushErr := buf.Flush(); err == nil {
+		err = flushErr
 	}
-	return buf.Flush()
+	return err
 }
