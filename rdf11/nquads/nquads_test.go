@@ -807,6 +807,33 @@ func TestEncodeErrors(t *testing.T) {
 		}
 	})
 
+	t.Run("a triple term object", func(t *testing.T) {
+		// The shared term types model RDF 1.2, so a triple term reaches this
+		// package's Encode even though its own parser can never produce one.
+		// RDF 1.1 N-Quads has no syntax for it.
+		invalid := rdf.Quad{
+			Triple: rdf.Triple{
+				Subject:   rdf.IRI("http://e/s"),
+				Predicate: "http://e/p",
+				Object: rdf.TripleTerm{
+					Subject:   rdf.IRI("http://e/s2"),
+					Predicate: "http://e/p2",
+					Object:    rdf.IRI("http://e/o2"),
+				},
+			},
+			Graph: rdf.IRI("http://e/g"),
+		}
+
+		var b strings.Builder
+		err := nquads.Encode(&b, slices.Values([]rdf.Quad{invalid}))
+		if !errors.Is(err, nquads.ErrTripleTerm) {
+			t.Errorf("Encode() = %v, want %v", err, nquads.ErrTripleTerm)
+		}
+		if b.String() != "" {
+			t.Errorf("Encode() wrote %q, want nothing", b.String())
+		}
+	})
+
 	t.Run("the statements before an invalid one are still written", func(t *testing.T) {
 		valid := rdf.Quad{
 			Triple: rdf.Triple{

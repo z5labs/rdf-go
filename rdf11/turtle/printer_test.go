@@ -715,6 +715,21 @@ func TestEncodeErrors(t *testing.T) {
 			},
 			want: rdf.ErrInvalidSubject,
 		},
+		{
+			name: "a triple term object",
+			triples: []rdf.Triple{
+				{
+					Subject:   rdf.IRI("http://e/s"),
+					Predicate: "http://e/p",
+					Object: rdf.TripleTerm{
+						Subject:   rdf.IRI("http://e/s2"),
+						Predicate: "http://e/p2",
+						Object:    rdf.IRI("http://e/o2"),
+					},
+				},
+			},
+			want: turtle.ErrTripleTerm,
+		},
 	}
 
 	for _, tc := range testCases {

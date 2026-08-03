@@ -37,6 +37,15 @@ var ErrInvalidPrefix = errors.New("trig: invalid prefix binding")
 // the rdf12/trig package instead.
 var ErrBaseDirection = errors.New("trig: base direction has no RDF 1.1 TriG syntax")
 
+// ErrTripleTerm is reported when [Encode] is given a statement whose object is
+// a triple term.
+//
+// The shared term types model RDF 1.2, where a triple used as a term is the
+// fourth kind of term; RDF 1.1 TriG has no syntax for one. There is nothing to
+// write it as that this package could read back, so it is refused here and
+// belongs to the rdf12/trig package instead.
+var ErrTripleTerm = errors.New("trig: triple term has no RDF 1.1 TriG syntax")
+
 // Defaults for the layout options.
 const (
 	// DefaultIndent is one level of indentation for a continuation line.
@@ -680,8 +689,9 @@ var ErrNilDataset = errors.New("trig: cannot encode a nil dataset")
 //
 // It reports [ErrNilDataset] for a nil dataset, [ErrInvalidPrefix] for a prefix
 // binding that cannot be written, [ErrBaseDirection] for a literal that RDF 1.1
-// TriG cannot spell, the error from [rdf.Quad.Validate] for a quad that is not
-// one, and otherwise the first error from w.
+// TriG cannot spell, [ErrTripleTerm] for an object that is a triple term, the
+// error from [rdf.Quad.Validate] for a quad that is not one, and otherwise the
+// first error from w.
 //
 // Nothing is written until the whole dataset has been read, so all of those
 // leave w untouched: a dataset this package refuses is refused before any of it
@@ -929,6 +939,8 @@ func (e *encoder) term(t rdf.Term) (Term, error) {
 		return e.blankNode(n), nil
 	case rdf.Literal:
 		return e.literal(n)
+	case rdf.TripleTerm:
+		return nil, fmt.Errorf("%w: %s", ErrTripleTerm, n)
 	default:
 		panic(fmt.Sprintf("unknown term: %T", t))
 	}

@@ -13,6 +13,16 @@ import (
 // ErrNilDocument is reported when [Print] is given no document to print.
 var ErrNilDocument = errors.New("ntriples: cannot print a nil document")
 
+// ErrTripleTerm is reported when [Encode] is given a triple whose object is a
+// triple term.
+//
+// The shared term types model RDF 1.2, where a triple used as a term is the
+// fourth kind of term; RDF 1.1 N-Triples has no syntax for one. Writing the
+// "<<(" and ")>>" brackets anyway would produce a document this package could
+// not read back, so it is refused here and belongs to the rdf12/ntriples
+// package instead.
+var ErrTripleTerm = errors.New("ntriples: triple term has no RDF 1.1 N-Triples syntax")
+
 // Print writes doc to w as N-Triples.
 //
 // The document is reproduced rather than normalized: its statements keep the
@@ -202,10 +212,11 @@ func literal(l *Literal) string {
 // two such graphs is what [rdf.Isomorphic] is for. Producing labels that are
 // themselves canonical is a separate problem, and a much larger one.
 //
-// Encoding stops at the first error, which is the one from w, or the one from
+// Encoding stops at the first error, which is the one from w, the one from
 // [rdf.Triple.Validate] if a triple could not be written as N-Triples at all —
 // a literal subject cannot, and writing it anyway would produce a document
-// this package could not read back.
+// this package could not read back — or [ErrTripleTerm] if its object is a
+// triple term, which RDF 1.1 has no syntax for.
 //
 // Stopping early does not discard what came before it: the statements written
 // before the offending one reach w, and only the offending one and those after
@@ -217,6 +228,10 @@ func Encode(w io.Writer, triples iter.Seq[rdf.Triple]) error {
 	var err error
 	for triple := range triples {
 		if err = triple.Validate(); err != nil {
+			break
+		}
+		if object, ok := triple.Object.(rdf.TripleTerm); ok {
+			err = fmt.Errorf("%w: %s", ErrTripleTerm, object)
 			break
 		}
 		if _, err = io.WriteString(buf, triple.String()); err != nil {

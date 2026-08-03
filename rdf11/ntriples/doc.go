@@ -33,4 +33,9 @@
 // "--rtl" — are rejected here, and belong to the rdf12/ntriples package. Both
 // produce the shared term types of the rdf package, so a graph read by one can
 // be written by the other.
+//
+// Those shared term types model RDF 1.2, so a triple term can reach [Encode]
+// even though this package's own parser can never produce one. It is reported
+// as [ErrTripleTerm] rather than written in a spelling RDF 1.1 N-Triples does
+// not have.
 package ntriples

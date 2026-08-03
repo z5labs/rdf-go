@@ -37,6 +37,15 @@ var ErrInvalidPrefix = errors.New("turtle: invalid prefix binding")
 // the rdf12/turtle package instead.
 var ErrBaseDirection = errors.New("turtle: base direction has no RDF 1.1 Turtle syntax")
 
+// ErrTripleTerm is reported when [Encode] is given a statement whose object is
+// a triple term.
+//
+// The shared term types model RDF 1.2, where a triple used as a term is the
+// fourth kind of term; RDF 1.1 Turtle has no syntax for one. There is nothing
+// to write it as that this package could read back, so it is refused here and
+// belongs to the rdf12/turtle package instead.
+var ErrTripleTerm = errors.New("turtle: triple term has no RDF 1.1 Turtle syntax")
+
 // Defaults for the layout options.
 const (
 	// DefaultIndent is one level of indentation for a continuation line.
@@ -629,11 +638,12 @@ func runeLen(s string) int { return utf8.RuneCountInString(s) }
 // encoding more than fits in memory wants N-Triples, which needs no grouping.
 //
 // It reports [ErrInvalidPrefix] for a prefix binding that cannot be written,
-// [ErrBaseDirection] for a literal that RDF 1.1 Turtle cannot spell, the error
-// from [rdf.Triple.Validate] for a triple that is not one, and otherwise the
-// first error from w.
+// [ErrBaseDirection] for a literal that RDF 1.1 Turtle cannot spell,
+// [ErrTripleTerm] for an object that is a triple term, the error from
+// [rdf.Triple.Validate] for a triple that is not one, and otherwise the first
+// error from w.
 //
-// Nothing is written until every triple has been read, so all three of those
+// Nothing is written until every triple has been read, so all four of those
 // leave w untouched: a sequence this package refuses is refused before any of
 // it has been written. An error from w itself is a different matter, and
 // leaves behind whatever reached w before it — a caller that must not act on a
@@ -804,6 +814,8 @@ func (e *encoder) term(t rdf.Term) (Term, error) {
 		return e.blankNode(n), nil
 	case rdf.Literal:
 		return e.literal(n)
+	case rdf.TripleTerm:
+		return nil, fmt.Errorf("%w: %s", ErrTripleTerm, n)
 	default:
 		panic(fmt.Sprintf("unknown term: %T", t))
 	}

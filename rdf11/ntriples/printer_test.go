@@ -654,6 +654,30 @@ func TestEncodeErrors(t *testing.T) {
 		}
 	})
 
+	t.Run("a triple term object", func(t *testing.T) {
+		// The shared term types model RDF 1.2, so a triple term reaches this
+		// package's Encode even though its own parser can never produce one.
+		// RDF 1.1 N-Triples has no syntax for it.
+		invalid := rdf.Triple{
+			Subject:   rdf.IRI("http://example.com/s"),
+			Predicate: "http://example.com/p",
+			Object: rdf.TripleTerm{
+				Subject:   rdf.IRI("http://example.com/s2"),
+				Predicate: "http://example.com/p2",
+				Object:    rdf.IRI("http://example.com/o2"),
+			},
+		}
+
+		var b strings.Builder
+		err := ntriples.Encode(&b, slices.Values([]rdf.Triple{invalid}))
+		if !errors.Is(err, ntriples.ErrTripleTerm) {
+			t.Errorf("Encode() = %v, want %v", err, ntriples.ErrTripleTerm)
+		}
+		if b.String() != "" {
+			t.Errorf("Encode() wrote %q, want nothing", b.String())
+		}
+	})
+
 	// Output is buffered, so what a caller receives when encoding stops early
 	// would otherwise depend on where the buffer happened to fill: everything
 	// up to the last flush for a long document, nothing at all for a short
