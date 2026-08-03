@@ -17,7 +17,7 @@
 // the tree as well.
 //
 // Writing mirrors the two. [Print] writes a [Document] back, abbreviations and
-// comments and all, so that [Parse] and Print together rewrite a document
+// comments and all, so that [Parse] and [Print] together rewrite a document
 // rather than replace it. [Encode] writes data model triples, choosing how to
 // say them: statements about one subject gathered into one, rdf:type written
 // "a", and IRIs abbreviated against the prefixes a caller supplies with

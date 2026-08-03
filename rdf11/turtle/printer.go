@@ -631,8 +631,14 @@ func runeLen(s string) int { return utf8.RuneCountInString(s) }
 // It reports [ErrInvalidPrefix] for a prefix binding that cannot be written,
 // [ErrBaseDirection] for a literal that RDF 1.1 Turtle cannot spell, the error
 // from [rdf.Triple.Validate] for a triple that is not one, and otherwise the
-// first error from w. Nothing is written before every triple has been read, so
-// an error leaves w untouched.
+// first error from w.
+//
+// Nothing is written until every triple has been read, so all three of those
+// leave w untouched: a sequence this package refuses is refused before any of
+// it has been written. An error from w itself is a different matter, and
+// leaves behind whatever reached w before it — a caller that must not act on a
+// partial document should encode into a buffer of its own and write that on
+// once Encode returns nil.
 func Encode(w io.Writer, triples iter.Seq[rdf.Triple], opts ...Option) error {
 	cfg := newConfig(opts)
 
