@@ -709,3 +709,54 @@ text""" .
 		t.Errorf("Tokenize() gave %v,\nwant %v", kinds, want)
 	}
 }
+
+// TestTokenizeBooleans covers BooleanLiteral, which the grammar makes a
+// keyword rather than a name and which is case-sensitive where the
+// SPARQL-style directives are not.
+func TestTokenizeBooleans(t *testing.T) {
+	testCases := []struct {
+		name     string
+		src      string
+		expected []turtle.Token
+	}{
+		{
+			name:     "true",
+			src:      `true`,
+			expected: []turtle.Token{tok(1, 1, turtle.TokenBoolean, "true")},
+		},
+		{
+			name:     "false",
+			src:      `false`,
+			expected: []turtle.Token{tok(1, 1, turtle.TokenBoolean, "false")},
+		},
+		{
+			name: "a boolean object",
+			src:  `<http://e/s> <http://e/p> true .`,
+			expected: []turtle.Token{
+				tok(1, 1, turtle.TokenIRIRef, "http://e/s"),
+				tok(1, 14, turtle.TokenIRIRef, "http://e/p"),
+				tok(1, 27, turtle.TokenBoolean, "true"),
+				tok(1, 32, turtle.TokenDot, "."),
+			},
+		},
+		{
+			name:     "a prefixed name may still be called true",
+			src:      `ex:true`,
+			expected: []turtle.Token{tok(1, 1, turtle.TokenPNameLN, "ex:true")},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			run(t, tc.src, tc.expected)
+		})
+	}
+
+	t.Run("the spelling is case sensitive", func(t *testing.T) {
+		_, err := collect(turtle.Tokenize(strings.NewReader(`TRUE`)))
+		want := turtle.UnexpectedNameError{Pos: turtle.Pos{Line: 1, Column: 1}, Name: "TRUE"}
+		if err != want {
+			t.Errorf("Tokenize() error = %v, want %v", err, want)
+		}
+	})
+}
