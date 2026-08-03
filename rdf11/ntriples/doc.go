@@ -1,11 +1,19 @@
 // Package ntriples implements RDF 1.1 N-Triples, the line-based serialization
 // defined at https://www.w3.org/TR/n-triples/.
 //
-// So far it reads: [Tokenize] turns a document into the terminals of the
-// grammar, and [Parse] turns those into a [Document] — a syntax tree whose
-// every node carries the position it was written at, and which keeps the
-// comments the grammar would otherwise discard. Producing the terms of the rdf
-// package from that tree, and printing, are still to come.
+// So far it reads, in two ways that share one implementation of the grammar.
+//
+// [Decode] streams: it yields each statement as an [rdf.Triple] the moment its
+// '.' is read, keeping nothing, so a document larger than memory can be read.
+// That is what to reach for to load a dump.
+//
+// [Parse] instead builds a [Document], a syntax tree whose every node carries
+// the position it was written at and which keeps the comments the grammar
+// would otherwise discard — what a tool reporting errors or writing the
+// document back needs. [Triples] lowers such a tree the same way [Decode]
+// does, for a caller who wanted both.
+//
+// Printing is still to come.
 //
 // N-Triples is the smallest complete grammar in the Turtle family: one triple
 // per line, every term written out in full, no prefixes and no abbreviations.

@@ -222,10 +222,46 @@ func joinTokenTypes(types []TokenType) string {
 // Parsing stops at the first error, which is either one of this package's
 // parse errors or the tokenizer error that prevented reading further.
 func Parse(r io.Reader) (*Document, error) {
+	doc := &Document{Pos: Pos{Line: 1, Column: 1}}
+	if err := parse(r, doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+// sink receives what the parser reads, one statement at a time.
+//
+// There is only one implementation of the grammar, and this is how it serves
+// two callers with opposite needs. [Parse] collects everything into a
+// [Document]; [Decode] lowers each statement and hands it on the moment its
+// '.' arrives, keeping nothing, which is what lets it read a document larger
+// than memory. Splitting the grammar in two instead would leave two things to
+// keep in step with the specification.
+type sink interface {
+	// statement receives a parsed statement. Returning an error stops
+	// parsing, and the error is what parse reports.
+	statement(*Triple) error
+
+	// comment receives a parsed comment.
+	comment(*Comment)
+}
+
+// statement appends the statement to the document.
+func (d *Document) statement(t *Triple) error {
+	d.Triples = append(d.Triples, t)
+	return nil
+}
+
+// comment appends the comment to the document.
+func (d *Document) comment(c *Comment) {
+	d.Comments = append(d.Comments, c)
+}
+
+// parse reads the document in r, handing each statement and comment to s.
+func parse(r io.Reader, s sink) error {
 	next, stop := iter.Pull2(Tokenize(r))
 	defer stop()
 
-	doc := &Document{Pos: Pos{Line: 1, Column: 1}}
 	p := &parser{
 		next: next,
 		pos:  Pos{Line: 1, Column: 1},
@@ -233,12 +269,9 @@ func Parse(r io.Reader) (*Document, error) {
 
 	var err error
 	for action := parseDocument; action != nil && err == nil; {
-		action, err = action(p, doc)
+		action, err = action(p, s)
 	}
-	if err != nil {
-		return nil, err
-	}
-	return doc, nil
+	return err
 }
 
 // parser reads the token stream one token at a time, with a single token of
@@ -311,7 +344,7 @@ type parserAction[T any] func(p *parser, t T) (parserAction[T], error)
 // parseDocument reads whatever comes between statements — line endings, which
 // separate them, and comments, which the grammar counts as white space — and
 // then either ends the document or hands over to parseTriple.
-func parseDocument(p *parser, doc *Document) (parserAction[*Document], error) {
+func parseDocument(p *parser, s sink) (parserAction[sink], error) {
 	for {
 		tok, err, ok := p.peek()
 		if err != nil {
@@ -326,7 +359,7 @@ func parseDocument(p *parser, doc *Document) (parserAction[*Document], error) {
 			p.discard()
 		case TokenComment:
 			p.discard()
-			doc.Comments = append(doc.Comments, &Comment{Pos: tok.Pos, Text: string(tok.Value)})
+			s.comment(&Comment{Pos: tok.Pos, Text: string(tok.Value)})
 		default:
 			return parseTriple, nil
 		}
@@ -339,7 +372,7 @@ func parseDocument(p *parser, doc *Document) (parserAction[*Document], error) {
 //
 // Nothing may come between the four, not even a comment: a comment runs to the
 // end of its line, and a statement does not outlive its own line.
-func parseTriple(p *parser, doc *Document) (parserAction[*Document], error) {
+func parseTriple(p *parser, s sink) (parserAction[sink], error) {
 	subject, err := parseSubject(p)
 	if err != nil {
 		return nil, err
@@ -359,12 +392,15 @@ func parseTriple(p *parser, doc *Document) (parserAction[*Document], error) {
 		return nil, err
 	}
 
-	doc.Triples = append(doc.Triples, &Triple{
+	err = s.statement(&Triple{
 		Pos:       subject.Position(),
 		Subject:   subject,
 		Predicate: predicate,
 		Object:    object,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	return parseTripleEnd, nil
 }
@@ -376,7 +412,7 @@ func parseTriple(p *parser, doc *Document) (parserAction[*Document], error) {
 // The grammar separates statements with a line ending, so a second one on the
 // same line is refused rather than quietly accepted. A comment may follow,
 // having nowhere to run to but the end of the line.
-func parseTripleEnd(p *parser, doc *Document) (parserAction[*Document], error) {
+func parseTripleEnd(p *parser, s sink) (parserAction[sink], error) {
 	tok, err, ok := p.peek()
 	if err != nil {
 		return nil, err
