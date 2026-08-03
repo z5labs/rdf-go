@@ -81,15 +81,38 @@ func Parse(r io.Reader) (*Document, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	doc.Comments = p.comments
 	return doc, nil
 }
 
 // parser reads the token stream one token at a time, with a single token of
 // lookahead.
 type parser struct {
-	next    func() (Token, error, bool)
-	pending *Token
-	pos     Pos
+	next     func() (Token, error, bool)
+	pending  *Token
+	pos      Pos
+	comments []*Comment
+}
+
+// pull takes the next token that is not a comment, keeping the comments it
+// passes over.
+//
+// A comment is white space in Turtle and may stand anywhere between two
+// terminals — between an object and the '.' that ends its statement as
+// readily as between statements. Skipping them here rather than in the rules
+// means no rule has to allow for one, and none can forget to.
+func (p *parser) pull() (Token, error, bool) {
+	for {
+		tok, err, ok := p.next()
+		if err != nil || !ok {
+			return tok, err, ok
+		}
+		if tok.Type != TokenComment {
+			return tok, nil, true
+		}
+		p.comments = append(p.comments, &Comment{Pos: tok.Pos, Text: string(tok.Value)})
+	}
 }
 
 func (p *parser) read() (Token, error, bool) {
@@ -100,7 +123,7 @@ func (p *parser) read() (Token, error, bool) {
 		return tok, nil, true
 	}
 
-	tok, err, ok := p.next()
+	tok, err, ok := p.pull()
 	if ok && err == nil {
 		p.pos = tok.Pos
 	}
@@ -112,7 +135,7 @@ func (p *parser) peek() (Token, error, bool) {
 		return *p.pending, nil, true
 	}
 
-	tok, err, ok := p.next()
+	tok, err, ok := p.pull()
 	if err != nil {
 		return Token{}, err, false
 	}
@@ -148,27 +171,21 @@ func (p *parser) expect(expected ...TokenType) (Token, error) {
 // nothing left to parse.
 type parserAction[T any] func(p *parser, t T) (parserAction[T], error)
 
-// parseDocument reads the comments between statements and then either ends the
-// document or reads the next statement.
+// parseDocument either ends the document or reads the next statement.
 //
 //	turtleDoc ::= statement*
+//
+// Comments need no handling here: the parser passes over them wherever they
+// stand, which is anywhere at all.
 func parseDocument(p *parser, doc *Document) (parserAction[*Document], error) {
-	for {
-		tok, err, ok := p.peek()
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, nil
-		}
-
-		if tok.Type == TokenComment {
-			p.discard()
-			doc.Comments = append(doc.Comments, &Comment{Pos: tok.Pos, Text: string(tok.Value)})
-			continue
-		}
-		return parseStatement, nil
+	_, err, ok := p.peek()
+	if err != nil {
+		return nil, err
 	}
+	if !ok {
+		return nil, nil
+	}
+	return parseStatement, nil
 }
 
 // parseStatement reads one directive or one set of triples.
