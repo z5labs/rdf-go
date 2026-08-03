@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	rdf "github.com/z5labs/rdf-go"
-	"github.com/z5labs/rdf-go/rdf11/turtle"
+	turtle11 "github.com/z5labs/rdf-go/rdf11/turtle"
 	"github.com/z5labs/rdf-go/vocab"
 )
 
@@ -24,6 +24,13 @@ const (
 	// mfEntries is mf:entries, whose object is an RDF collection of the
 	// manifest's tests in the order they are meant to be reported.
 	mfEntries rdf.IRI = namespaceMF + "entries"
+
+	// mfInclude is mf:include, whose object is an RDF collection of other
+	// manifests this one is made of. The RDF 1.2 suites declare no test of
+	// their own: their manifest is nothing but an mf:include naming the
+	// syntax and canonicalization manifests beside it, and the RDF 1.1
+	// manifest for the same syntax.
+	mfInclude rdf.IRI = namespaceMF + "include"
 
 	// mfName is mf:name, the test's short name. It is what the W3C reports
 	// call a test, and so what a Go subtest is named after.
@@ -54,6 +61,10 @@ type manifest struct {
 	// assumedTestBase is the manifest's mf:assumedTestBase, empty if it
 	// declares none.
 	assumedTestBase rdf.IRI
+
+	// includes are the manifests this one is made of, in mf:include order,
+	// as the IRIs of the documents holding them.
+	includes []rdf.IRI
 
 	// entries are the tests, in mf:entries order.
 	entries []manifestEntry
@@ -119,9 +130,30 @@ func readManifest(r io.Reader, base string) (*manifest, error) {
 		m.assumedTestBase = assumed
 	}
 
-	entries, ok := index.one(node, mfEntries)
-	if !ok {
-		return nil, fmt.Errorf("manifest: %s has no mf:entries", iri)
+	includes, hasIncludes := index.one(node, mfInclude)
+	if hasIncludes {
+		list, err := index.collection(includes)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range list {
+			included, ok := item.(rdf.IRI)
+			if !ok {
+				return nil, fmt.Errorf("manifest: %s includes %s, want an IRI", iri, item)
+			}
+			m.includes = append(m.includes, included)
+		}
+	}
+
+	entries, hasEntries := index.one(node, mfEntries)
+	if !hasEntries {
+		// A manifest made only of others declares no test itself, which is
+		// what the RDF 1.2 manifests are. One declaring neither is not a
+		// manifest of anything, and is reported rather than run as empty.
+		if hasIncludes {
+			return m, nil
+		}
+		return nil, fmt.Errorf("manifest: %s has neither mf:entries nor mf:include, so it declares no tests", iri)
 	}
 	list, err := index.collection(entries)
 	if err != nil {
@@ -196,7 +228,7 @@ type turtleIndex map[rdf.Term]map[rdf.IRI][]rdf.Term
 // readTurtleIndex decodes a Turtle document and indexes its triples.
 func readTurtleIndex(r io.Reader, base string) (turtleIndex, error) {
 	index := make(turtleIndex)
-	for triple, err := range turtle.Decode(withBase(r, base)) {
+	for triple, err := range turtle11.Decode(withBase(r, base)) {
 		if err != nil {
 			return nil, err
 		}

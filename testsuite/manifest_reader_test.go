@@ -166,6 +166,50 @@ _:cell rdf:first <#only> ; rdf:rest rdf:nil .
 				},
 			},
 		},
+		{
+			// The RDF 1.2 manifests are made of others and declare no test of
+			// their own, so a manifest with mf:include and no mf:entries is
+			// read rather than refused, and the includes keep their order.
+			name: "a manifest made only of other manifests",
+			src: `
+<> rdf:type mf:Manifest ;
+   rdfs:label "Included tests" ;
+   mf:include ( <c14n/manifest.ttl> <syntax/manifest.ttl> <../other/manifest.ttl> ) .
+`,
+			want: &manifest{
+				iri:   "https://example.test/suite/manifest.ttl",
+				label: "Included tests",
+				includes: []rdf.IRI{
+					"https://example.test/suite/c14n/manifest.ttl",
+					"https://example.test/suite/syntax/manifest.ttl",
+					"https://example.test/other/manifest.ttl",
+				},
+			},
+		},
+		{
+			// Nothing stops a manifest from doing both, and one that does is
+			// read as saying both.
+			name: "a manifest with both includes and entries",
+			src: `
+<> rdf:type mf:Manifest ;
+   mf:include ( <sub/manifest.ttl> ) ;
+   mf:entries ( <#a> ) .
+
+<#a> rdf:type rdft:TestNQuadsPositiveSyntax ; mf:name "a" ; mf:action <a.nq> .
+`,
+			want: &manifest{
+				iri:      "https://example.test/suite/manifest.ttl",
+				includes: []rdf.IRI{"https://example.test/suite/sub/manifest.ttl"},
+				entries: []manifestEntry{
+					{
+						iri:    "https://example.test/suite/manifest.ttl#a",
+						typ:    "http://www.w3.org/ns/rdftest#TestNQuadsPositiveSyntax",
+						name:   "a",
+						action: "https://example.test/suite/a.nq",
+					},
+				},
+			},
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -207,9 +251,14 @@ func TestReadManifestRejects(t *testing.T) {
 			wantErr: "2 nodes typed",
 		},
 		{
-			name:    "no entries",
+			name:    "neither entries nor includes",
 			src:     `<> rdf:type mf:Manifest ; rdfs:label "no entries" .`,
-			wantErr: "has no mf:entries",
+			wantErr: "has neither mf:entries nor mf:include",
+		},
+		{
+			name:    "an include that is not an IRI",
+			src:     `<> rdf:type mf:Manifest ; mf:include ( "sub/manifest.ttl" ) .`,
+			wantErr: "want an IRI",
 		},
 		{
 			name: "entries is not a list",
@@ -371,6 +420,9 @@ func renderManifest(m *manifest) string {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "manifest %s label=%q assumedTestBase=%s", m.iri, m.label, m.assumedTestBase)
+	for _, include := range m.includes {
+		fmt.Fprintf(&b, "\n\tincludes %s", include)
+	}
 	for _, e := range m.entries {
 		fmt.Fprintf(&b, "\n\t%s type=%s name=%q comment=%q action=%s result=%s",
 			e.iri, e.typ, e.name, e.comment, e.action, e.result)
