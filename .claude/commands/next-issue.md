@@ -1,10 +1,11 @@
 ---
-description: Take the next eligible story issue through the full dev cycle — worktree, implement, test, PR, checks, Copilot review, merge.
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, EnterWorktree, ExitWorktree, Monitor, TaskCreate, TaskUpdate
+description: Take the next eligible story issue through the dev cycle — worktree, implement, test, PR, checks, Copilot review — then hand the PR back to the caller to merge.
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, EnterWorktree, Monitor, TaskCreate, TaskUpdate
 ---
 
-Run **exactly one** issue end-to-end, then stop. Do not start a second issue in the same
-invocation — the loop re-invokes this command for the next one.
+Take **exactly one** issue from backlog to a merge-ready PR, then stop. Do not start a
+second issue in the same invocation — the loop re-invokes this command for the next one.
+The merge itself belongs to the caller, not to you; see step 9.
 
 Repo: `z5labs/rdf-go`. Default branch: `main`. Milestone under construction: `v0.2.0`.
 
@@ -212,27 +213,64 @@ route is `pulls/comments/<comment-id>/replies` and that the form above 404s; it 
 and the reply rebutting it was posted with the command as written. The shorter path is the
 `GET`/`PATCH`/`DELETE` route for a single review comment, not the reply route.
 
-If you push fixes, go back to step 6 and let checks re-run before merging.
+If you push fixes, go back to step 6 and let checks re-run before handing the PR back.
 
-## 9. Merge
+## 9. Hand the PR back — do not merge it yourself
 
-Merge only when **both** hold:
+**You never merge. The caller does.** Run `gh pr merge` and the cycle is wrong, even when
+everything is green. Your job ends with a PR that is ready for someone else to press the
+button.
+
+The PR is ready to hand back only when **both** hold:
 
 1. Checks are green, and
 2. A Copilot review actually **completed** — it either left comments (every one now
    addressed or answered) or reported that it generated none.
 
+When both hold, leave the PR open, **leave the worktree in place**, and stop with a report
+whose first line is exactly:
+
+```
+READY TO MERGE #<pr> (closes #<n>)
+```
+
+The caller merges, then removes the worktree and updates the main checkout. Do not do any
+of that yourself — removing the worktree before the merge lands strands work if the merge
+fails, and the caller has no way to distinguish "ready" from "already merged" if you clean
+up first.
+
 A review that was declined, never arrived, or was never requested because the request
-errored is **not** a completed review. In that case do **not** merge. Leave the PR open,
-leave the worktree in place, and stop the cycle with a report beginning `BLOCKED` that
-names the PR and why the review is missing. Merging unreviewed work is the one step of
-this cycle that is not yours to take unilaterally — the user resumes it once they have
-looked.
+errored is **not** a completed review. In that case leave the PR open, leave the worktree
+in place, and stop with a report beginning `BLOCKED` that names the PR and why the review
+is missing — so the caller can tell a PR that needs a human look from one that is merely
+waiting on a button press.
 
 If the PR is unreviewable because it exceeds the 300-file limit, say so in the `BLOCKED`
-report and suggest how the work could be split; do not merge it anyway.
+report and suggest how the work could be split.
 
-Once both conditions hold:
+## Report
+
+Finish with a short status: the `READY TO MERGE #<pr> (closes #<n>)` or `BLOCKED` first
+line, then issue number and title, PR URL, check result, whether Copilot reviewed and what
+it flagged, and any judgment call that shaped the public API. If you stopped early, say
+exactly where and why.
+
+## For the caller — merge and clean up
+
+This section is **not** for the subagent running the cycle. It is what the caller does
+after a `READY TO MERGE` report comes back.
+
+Re-confirm the two conditions hold before merging — checks green and a completed Copilot
+review — rather than taking the report's word for it:
+
+```
+gh pr checks <pr>
+gh api repos/z5labs/rdf-go/pulls/<pr>/reviews \
+  --jq '[.[] | select(.user.login | test("copilot";"i"))]
+        | sort_by(.submitted_at) | last | .body // "no copilot review"'
+```
+
+Then merge:
 
 ```
 gh pr merge <pr> --squash
@@ -251,27 +289,13 @@ gh pr view <pr> --json state,mergedAt -q '"\(.state) \(.mergedAt)"'
 gh issue view <n> --json state -q .state
 ```
 
-## 10. Clean up
-
-The merged commit is already on `main`, so the worktree branch is redundant:
-
-```
-ExitWorktree(action: "remove", discard_changes: true)
-```
-
-Then bring the main checkout up to date so the next iteration branches from the merged
-state. `git worktree list` reports it first, so it needs no hard-coded path:
+Then drop the now-redundant worktree and bring the main checkout up to date, so the next
+iteration branches from the merged state:
 
 ```
-git -C "$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)" checkout main
-git -C "$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)" pull
+git worktree remove .claude/worktrees/issue-<n>
+git checkout main && git pull
 ```
-
-## Report
-
-Finish with a short status line: issue number and title, PR number and URL, check result,
-whether Copilot reviewed and what it flagged, and merge confirmation. If you stopped early,
-say exactly where and why.
 
 ## Stop conditions
 
@@ -280,8 +304,8 @@ Stop and report — do not push through — if any of these happen:
 - The same CI failure survives three fix attempts.
 - Acceptance criteria are ambiguous enough that two readings produce materially different
   public APIs.
-- Merging would require a force-push, a branch-protection override, or discarding someone
-  else's commits.
+- Landing the PR would require a force-push, a branch-protection override, or discarding
+  someone else's commits.
 - `git status` in the main checkout is dirty with changes you did not make.
 - The Copilot review declined, timed out, or was never requested successfully (step 9).
 
