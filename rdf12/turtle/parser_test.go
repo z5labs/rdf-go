@@ -44,7 +44,7 @@ func firstObject(t *testing.T, triples *turtle.Triples) turtle.Term {
 	if len(triples.Predicates) == 0 || len(triples.Predicates[0].Objects) == 0 {
 		t.Fatal("no objects")
 	}
-	return triples.Predicates[0].Objects[0]
+	return triples.Predicates[0].Objects[0].Term
 }
 
 // name builds the node a prefixed name with a local part parses to, which the
@@ -314,11 +314,332 @@ func TestParseDistinguishesTheBracketedForms(t *testing.T) {
 	if len(objects) != 2 {
 		t.Fatalf("parsed %d objects, want 2", len(objects))
 	}
-	if _, ok := objects[0].(*turtle.TripleTerm); !ok {
-		t.Errorf("first object is %T, want *turtle.TripleTerm", objects[0])
+	if _, ok := objects[0].Term.(*turtle.TripleTerm); !ok {
+		t.Errorf("first object is %T, want *turtle.TripleTerm", objects[0].Term)
 	}
-	if _, ok := objects[1].(*turtle.ReifiedTriple); !ok {
-		t.Errorf("second object is %T, want *turtle.ReifiedTriple", objects[1])
+	if _, ok := objects[1].Term.(*turtle.ReifiedTriple); !ok {
+		t.Errorf("second object is %T, want *turtle.ReifiedTriple", objects[1].Term)
+	}
+}
+
+// objects returns the objects of the first thing said about a subject, which
+// the annotation cases below reach past the first of.
+func objects(t *testing.T, triples *turtle.Triples) []*turtle.Object {
+	t.Helper()
+
+	if len(triples.Predicates) == 0 {
+		t.Fatal("no predicates")
+	}
+	return triples.Predicates[0].Objects
+}
+
+// block asserts that an object carries exactly one annotation block and
+// returns it.
+func block(t *testing.T, object *turtle.Object) *turtle.AnnotationBlock {
+	t.Helper()
+
+	if len(object.Annotation) != 1 {
+		t.Fatalf("object carries %d annotation items, want 1", len(object.Annotation))
+	}
+	b, ok := object.Annotation[0].(*turtle.AnnotationBlock)
+	if !ok {
+		t.Fatalf("annotation item is %T, want *turtle.AnnotationBlock", object.Annotation[0])
+	}
+	return b
+}
+
+// TestParseAnnotation covers the annotation syntax in the shapes the
+// production allows, each read back as the tree it parses to.
+//
+//	objectList      ::= object annotation (',' object annotation)*
+//	annotation      ::= (reifier | annotationBlock)*
+//	annotationBlock ::= '{|' predicateObjectList '|}'
+func TestParseAnnotation(t *testing.T) {
+	t.Run("a block on its own", func(t *testing.T) {
+		got := objects(t, only(t, parse(t, `:s :p :o {| :q :v |} .`)))
+
+		want := []*turtle.Object{{
+			Term: name(1, 7, "", "o"),
+			Annotation: []turtle.Annotation{
+				&turtle.AnnotationBlock{
+					Pos: pos(1, 10),
+					Predicates: []*turtle.PredicateObject{{
+						Pos:     pos(1, 13),
+						Verb:    name(1, 13, "", "q"),
+						Objects: []*turtle.Object{{Term: name(1, 16, "", "v")}},
+					}},
+				},
+			},
+		}}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Parse() = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("a reifier before a block", func(t *testing.T) {
+		got := objects(t, only(t, parse(t, `:s :p :o ~ :r {| :q :v |} .`)))
+
+		want := []*turtle.Object{{
+			Term: name(1, 7, "", "o"),
+			Annotation: []turtle.Annotation{
+				&turtle.Reifier{Pos: pos(1, 10), ID: name(1, 12, "", "r")},
+				&turtle.AnnotationBlock{
+					Pos: pos(1, 15),
+					Predicates: []*turtle.PredicateObject{{
+						Pos:     pos(1, 18),
+						Verb:    name(1, 18, "", "q"),
+						Objects: []*turtle.Object{{Term: name(1, 21, "", "v")}},
+					}},
+				},
+			},
+		}}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Parse() = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("two reifiers with no block between them", func(t *testing.T) {
+		got := objects(t, only(t, parse(t, `:s :p :o ~ :r1 ~ :r2 .`)))
+
+		want := []*turtle.Object{{
+			Term: name(1, 7, "", "o"),
+			Annotation: []turtle.Annotation{
+				&turtle.Reifier{Pos: pos(1, 10), ID: name(1, 12, "", "r1")},
+				&turtle.Reifier{Pos: pos(1, 16), ID: name(1, 18, "", "r2")},
+			},
+		}}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Parse() = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("a bare reifier, which names nothing and is still written", func(t *testing.T) {
+		got := objects(t, only(t, parse(t, `:s :p :o ~ .`)))
+
+		want := []*turtle.Object{{
+			Term:       name(1, 7, "", "o"),
+			Annotation: []turtle.Annotation{&turtle.Reifier{Pos: pos(1, 10)}},
+		}}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Parse() = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("a reifier may name a blank node", func(t *testing.T) {
+		for _, src := range []string{`:s :p :o ~ _:r .`, `:s :p :o ~ [] .`} {
+			t.Run(src, func(t *testing.T) {
+				got := objects(t, only(t, parse(t, src)))
+
+				reifier, ok := got[0].Annotation[0].(*turtle.Reifier)
+				if !ok {
+					t.Fatalf("annotation item is %T, want *turtle.Reifier", got[0].Annotation[0])
+				}
+				if reifier.ID == nil {
+					t.Fatal("Reifier.ID = nil, want a blank node")
+				}
+			})
+		}
+	})
+
+	t.Run("two blocks on one triple", func(t *testing.T) {
+		got := objects(t, only(t, parse(t, `:s :p :o {| :q :v |} {| :x :y |} .`)))
+
+		if len(got) != 1 {
+			t.Fatalf("parsed %d objects, want 1", len(got))
+		}
+		if len(got[0].Annotation) != 2 {
+			t.Fatalf("object carries %d annotation items, want 2", len(got[0].Annotation))
+		}
+		for i, item := range got[0].Annotation {
+			if _, ok := item.(*turtle.AnnotationBlock); !ok {
+				t.Errorf("annotation item %d is %T, want *turtle.AnnotationBlock", i, item)
+			}
+		}
+	})
+
+	t.Run("a reifier after a block begins a new annotation item", func(t *testing.T) {
+		got := objects(t, only(t, parse(t, `:s :p :o {| :q :v |} ~ :r .`)))
+
+		if len(got[0].Annotation) != 2 {
+			t.Fatalf("object carries %d annotation items, want 2", len(got[0].Annotation))
+		}
+		if _, ok := got[0].Annotation[0].(*turtle.AnnotationBlock); !ok {
+			t.Errorf("first item is %T, want *turtle.AnnotationBlock", got[0].Annotation[0])
+		}
+		if _, ok := got[0].Annotation[1].(*turtle.Reifier); !ok {
+			t.Errorf("second item is %T, want *turtle.Reifier", got[0].Annotation[1])
+		}
+	})
+
+	t.Run("a block holds a whole predicate object list", func(t *testing.T) {
+		got := block(t, objects(t, only(t, parse(t, `:s :p :o {| :q :v , :w ; :x :y |} .`)))[0])
+
+		if len(got.Predicates) != 2 {
+			t.Fatalf("block holds %d predicates, want 2", len(got.Predicates))
+		}
+		if n := len(got.Predicates[0].Objects); n != 2 {
+			t.Errorf("first verb has %d objects, want 2", n)
+		}
+		if n := len(got.Predicates[1].Objects); n != 1 {
+			t.Errorf("second verb has %d objects, want 1", n)
+		}
+	})
+
+	t.Run("blocks nest, an annotation being an object list like any other", func(t *testing.T) {
+		outer := block(t, objects(t, only(t, parse(t, `:s :p :o {| :q :v {| :x :y |} |} .`)))[0])
+
+		inner := block(t, outer.Predicates[0].Objects[0])
+		if len(inner.Predicates) != 1 {
+			t.Fatalf("inner block holds %d predicates, want 1", len(inner.Predicates))
+		}
+		if got, want := inner.Pos, pos(1, 19); got != want {
+			t.Errorf("inner block Pos = %s, want %s", got, want)
+		}
+	})
+
+	t.Run("a block inside a blank node property list", func(t *testing.T) {
+		triples := only(t, parse(t, `[ :p :o {| :q :v |} ] .`))
+
+		list, ok := triples.Subject.(*turtle.BlankNodePropertyList)
+		if !ok {
+			t.Fatalf("subject is %T, want *turtle.BlankNodePropertyList", triples.Subject)
+		}
+		if got := block(t, list.Predicates[0].Objects[0]); got.Pos != pos(1, 9) {
+			t.Errorf("block Pos = %s, want %s", got.Pos, pos(1, 9))
+		}
+	})
+
+	t.Run("a block annotates a reified triple standing as the object", func(t *testing.T) {
+		got := objects(t, only(t, parse(t, `:s :p << :a :b :c >> {| :q :v |} .`)))
+
+		if _, ok := got[0].Term.(*turtle.ReifiedTriple); !ok {
+			t.Fatalf("object is %T, want *turtle.ReifiedTriple", got[0].Term)
+		}
+		if b := block(t, got[0]); b.Pos != pos(1, 22) {
+			t.Errorf("block Pos = %s, want %s", b.Pos, pos(1, 22))
+		}
+	})
+}
+
+// TestParseAnnotationBindsToItsObject covers the criterion that an annotation
+// attaches to the object it follows and to no other, which is the whole of the
+// precedence between ',' ';' and "{|".
+func TestParseAnnotationBindsToItsObject(t *testing.T) {
+	t.Run("an annotation after a comma is the second object's", func(t *testing.T) {
+		got := objects(t, only(t, parse(t, `:s :p :o1 , :o2 {| :q :v |} .`)))
+
+		if len(got) != 2 {
+			t.Fatalf("parsed %d objects, want 2", len(got))
+		}
+		if got[0].Annotation != nil {
+			t.Errorf("first object carries %#v, want no annotation", got[0].Annotation)
+		}
+		if b := block(t, got[1]); b.Pos != pos(1, 17) {
+			t.Errorf("block Pos = %s, want %s", b.Pos, pos(1, 17))
+		}
+	})
+
+	t.Run("an annotation before a comma is the first object's", func(t *testing.T) {
+		got := objects(t, only(t, parse(t, `:s :p :o1 {| :q :v |} , :o2 .`)))
+
+		if len(got) != 2 {
+			t.Fatalf("parsed %d objects, want 2", len(got))
+		}
+		if b := block(t, got[0]); b.Pos != pos(1, 11) {
+			t.Errorf("block Pos = %s, want %s", b.Pos, pos(1, 11))
+		}
+		if got[1].Annotation != nil {
+			t.Errorf("second object carries %#v, want no annotation", got[1].Annotation)
+		}
+	})
+
+	t.Run("an annotation before a semicolon is the first verb's object's", func(t *testing.T) {
+		triples := only(t, parse(t, `:s :p :o {| :q :v |} ; :x :y .`))
+
+		if len(triples.Predicates) != 2 {
+			t.Fatalf("parsed %d predicates, want 2", len(triples.Predicates))
+		}
+		if b := block(t, triples.Predicates[0].Objects[0]); b.Pos != pos(1, 10) {
+			t.Errorf("block Pos = %s, want %s", b.Pos, pos(1, 10))
+		}
+		if a := triples.Predicates[1].Objects[0].Annotation; a != nil {
+			t.Errorf("second verb's object carries %#v, want no annotation", a)
+		}
+	})
+
+	t.Run("every object of a list may carry its own annotation", func(t *testing.T) {
+		got := objects(t, only(t, parse(t, `:s :p :o1 ~ :r1 , :o2 ~ :r2 .`)))
+
+		if len(got) != 2 {
+			t.Fatalf("parsed %d objects, want 2", len(got))
+		}
+		for i, want := range []string{"r1", "r2"} {
+			reifier, ok := got[i].Annotation[0].(*turtle.Reifier)
+			if !ok {
+				t.Fatalf("object %d carries %T, want *turtle.Reifier", i, got[i].Annotation[0])
+			}
+			id, ok := reifier.ID.(*turtle.PrefixedName)
+			if !ok {
+				t.Fatalf("object %d reifier ID is %T, want *turtle.PrefixedName", i, reifier.ID)
+			}
+			if id.Local != want {
+				t.Errorf("object %d reifier ID = %q, want %q", i, id.Local, want)
+			}
+		}
+	})
+}
+
+// TestParseAnnotationRejects covers the places an annotation may not stand.
+// The production names it only in objectList, so every other object position —
+// a collection's, a triple term's, a reified triple's — has none.
+func TestParseAnnotationRejects(t *testing.T) {
+	sources := []string{
+		`:s :p :o {| |} .`,
+		`{| :q :v |} :p :o .`,
+		`:s {| :q :v |} :o .`,
+		`:s :p :o |} .`,
+		`:s :p :o {| :q :v |} |} .`,
+		`:s :p ( :a {| :q :v |} ) .`,
+		`:s :p <<( :a :b :c {| :q :v |} )>> .`,
+		`:s :p << :a :b :c {| :q :v |} >> .`,
+		`:s :p << :a :b :c ~ :r {| :q :v |} >> .`,
+		`:s :p :o {| :q :v |`,
+		`:s :p :o {`,
+	}
+
+	for _, src := range sources {
+		t.Run(src, func(t *testing.T) {
+			if doc, err := turtle.Parse(strings.NewReader(src)); err == nil {
+				t.Errorf("Parse() = %#v, want an error", doc)
+			}
+		})
+	}
+}
+
+// TestParseAnnotationTruncated covers input that ends while an annotation is
+// still open, which is a document cut off rather than one that ended.
+func TestParseAnnotationTruncated(t *testing.T) {
+	sources := []string{
+		`:s :p :o {|`,
+		`:s :p :o {| :q`,
+		`:s :p :o {| :q :v`,
+		`:s :p :o {| :q :v |}`,
+		`:s :p :o ~`,
+		`:s :p :o ~ :r`,
+	}
+
+	for _, src := range sources {
+		t.Run(src, func(t *testing.T) {
+			doc, err := turtle.Parse(strings.NewReader(src))
+			if err == nil {
+				t.Fatalf("Parse() = %#v, want an error", doc)
+			}
+
+			var truncated turtle.UnexpectedEndOfTokensError
+			if !errors.As(err, &truncated) {
+				t.Errorf("Parse() error = %#v, want an UnexpectedEndOfTokensError", err)
+			}
+		})
 	}
 }
 
@@ -686,6 +1007,19 @@ func TestNodePositions(t *testing.T) {
 	if got, want := triples.Position(), pos(1, 1); got != want {
 		t.Errorf("Triples.Position() = %s, want %s", got, want)
 	}
+
+	t.Run("an annotated object", func(t *testing.T) {
+		object := objects(t, only(t, parse(t, `:s :p :o {| :q :v |} .`)))[0]
+
+		// An Object stands where its term does: the annotation is written
+		// after the object and does not move it.
+		if got, want := object.Position(), pos(1, 7); got != want {
+			t.Errorf("Object.Position() = %s, want %s", got, want)
+		}
+		if got, want := object.Annotation[0].Position(), pos(1, 10); got != want {
+			t.Errorf("AnnotationBlock.Position() = %s, want %s", got, want)
+		}
+	})
 }
 
 func TestLiteralKindString(t *testing.T) {

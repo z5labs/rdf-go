@@ -2,12 +2,12 @@
 // the same parser struct with one token of lookahead, the same parserAction
 // combinators, and the same errors.
 //
-// What RDF 1.2 adds is the two bracketed forms and the reifier, and with them
-// the six productions that say where a term may stand. RDF 1.1 needed two —
-// subject and object — and could read both with one rule apiece. Here a triple
-// term's subject, a reified triple's subject, and a statement's subject are
-// three different sets of tokens, so each has a rule of its own naming the
-// production it implements.
+// What RDF 1.2 adds is the two bracketed forms, the reifier and the annotation
+// syntax, and with them the six productions that say where a term may stand.
+// RDF 1.1 needed two — subject and object — and could read both with one rule
+// apiece. Here a triple term's subject, a reified triple's subject, and a
+// statement's subject are three different sets of tokens, so each has a rule of
+// its own naming the production it implements.
 
 package turtle
 
@@ -69,8 +69,9 @@ func joinTokenTypes(types []TokenType) string {
 // The tree keeps what the document wrote rather than what it means. A prefixed
 // name stays a prefix and a local name; the "a" keyword stays itself; a
 // collection stays a list and a blank node property list stays a list of
-// predicates; and a reified triple stays sugar rather than becoming the triple
-// term and the rdf:reifies triple it stands for. None of it is expanded,
+// predicates; a reified triple stays sugar rather than becoming the triple
+// term and the rdf:reifies triple it stands for; and an annotation stays
+// attached to the [Object] it was written after. None of it is expanded,
 // because a printer given the expansion could only write the expansion back,
 // and the document said something shorter.
 //
@@ -527,16 +528,27 @@ func parseVerb(p *parser) (Verb, error) {
 
 // parseObjectList reads the objects given for one verb.
 //
-//	objectList ::= object (',' object)*
-func parseObjectList(p *parser) ([]Term, error) {
-	var objects []Term
+//	objectList ::= object annotation (',' object annotation)*
+//
+// The annotation is read for each object rather than once for the list, which
+// is what settles the precedence the ',' would otherwise leave open: in
+// ":s :p :o1, :o2 {| :q :v |}" the block follows ":o2" and so annotates
+// ":s :p :o2", the earlier object having had its own annotation already — an
+// empty one.
+func parseObjectList(p *parser) ([]*Object, error) {
+	var objects []*Object
 
 	for {
-		object, err := parseObject(p)
+		term, err := parseObject(p)
 		if err != nil {
 			return nil, err
 		}
-		objects = append(objects, object)
+
+		annotation, err := parseAnnotation(p)
+		if err != nil {
+			return nil, err
+		}
+		objects = append(objects, &Object{Term: term, Annotation: annotation})
 
 		tok, err, ok := p.peek()
 		if err != nil {
@@ -547,6 +559,70 @@ func parseObjectList(p *parser) ([]Term, error) {
 		}
 		p.discard()
 	}
+}
+
+// parseAnnotation reads what was written after an object, which may be
+// nothing.
+//
+//	annotation ::= (reifier | annotationBlock)*
+//
+// The two may be mixed in any order and repeated, so the sequence is kept as
+// written rather than folded into a reifier and a list of blocks: which
+// reifier a block is given is decided by what stands immediately before it.
+func parseAnnotation(p *parser) ([]Annotation, error) {
+	var items []Annotation
+
+	for {
+		tok, err, ok := p.peek()
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return items, nil
+		}
+
+		switch tok.Type {
+		case TokenReifier:
+			reifier, err := parseOptionalReifier(p)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, reifier)
+		case TokenAnnotationOpen:
+			block, err := parseAnnotationBlock(p)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, block)
+		default:
+			return items, nil
+		}
+	}
+}
+
+// parseAnnotationBlock reads one block of metadata about the triple just
+// written.
+//
+//	annotationBlock ::= '{|' predicateObjectList '|}'
+//
+// The list inside is the same production a statement's is, so the block may
+// hold semicolons, commas and annotations of its own, and nesting costs
+// nothing here.
+func parseAnnotationBlock(p *parser) (*AnnotationBlock, error) {
+	open, err := p.expect(TokenAnnotationOpen)
+	if err != nil {
+		return nil, err
+	}
+
+	predicates, err := parsePredicateObjectList(p)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := p.expect(TokenAnnotationClose); err != nil {
+		return nil, err
+	}
+	return &AnnotationBlock{Pos: open.Pos, Predicates: predicates}, nil
 }
 
 // parseObject reads one object.
@@ -710,14 +786,17 @@ var rtObjectTokens = []TokenType{
 	TokenTripleTermOpen, TokenReifiedTripleOpen,
 }
 
-// parseOptionalReifier reads the reifier a reified triple may name, returning
-// nil if none was written.
+// parseOptionalReifier reads a reifier, returning nil if none was written.
 //
 //	reifier ::= '~' (iri | BlankNode)?
 //
 // What may follow the '~' overlaps with what may close the triple, so the term
 // is taken only when one is there: a '>>' after the '~' ends the triple and
-// leaves the reifier standing alone.
+// leaves the reifier standing alone. The same holds in an annotation, where a
+// '{|', a ',', a ';' or the statement's '.' may follow the '~' instead.
+//
+// One rule serves both places the production is named — the tail of a reified
+// triple and an item of an annotation — the two being the same production.
 func parseOptionalReifier(p *parser) (*Reifier, error) {
 	tok, err, ok := p.peek()
 	if err != nil {

@@ -186,6 +186,117 @@ func TestDecodeRDF12(t *testing.T) {
 			src:  `:s :p "o"@ar--rtl .`,
 			want: `<http://example.com/s> <http://example.com/p> "o"@ar--rtl .`,
 		},
+		{
+			name: "an annotation block asserts the triple and describes it",
+			src:  `:s :p :o {| :q :v |} .`,
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o> .` + "\n" +
+				"_:r " + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .` + "\n" +
+				`_:r <http://example.com/q> <http://example.com/v> .`,
+		},
+		{
+			name: "a reifier before a block is the block's subject",
+			src:  `:s :p :o ~ :r {| :q :v |} .`,
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o> .` + "\n" +
+				`<http://example.com/r> ` + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .` + "\n" +
+				`<http://example.com/r> <http://example.com/q> <http://example.com/v> .`,
+		},
+		{
+			name: "a bare reifier reifies under a blank node and says nothing else",
+			src:  `:s :p :o ~ .`,
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o> .` + "\n" +
+				"_:r " + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .`,
+		},
+		{
+			name: "each of two reifiers gets its own rdf:reifies triple",
+			src:  `:s :p :o ~ :r1 ~ :r2 .`,
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o> .` + "\n" +
+				`<http://example.com/r1> ` + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .` + "\n" +
+				`<http://example.com/r2> ` + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .`,
+		},
+		{
+			name: "two blocks each reify the triple under a node of their own",
+			src:  `:s :p :o {| :q :v |} {| :x :y |} .`,
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o> .` + "\n" +
+				"_:r1 " + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .` + "\n" +
+				`_:r1 <http://example.com/q> <http://example.com/v> .` + "\n" +
+				"_:r2 " + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .` + "\n" +
+				`_:r2 <http://example.com/x> <http://example.com/y> .`,
+		},
+		{
+			name: "a block spends the reifier before it, so the next block mints one",
+			src:  `:s :p :o ~ :r {| :q :v |} {| :x :y |} .`,
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o> .` + "\n" +
+				`<http://example.com/r> ` + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .` + "\n" +
+				`<http://example.com/r> <http://example.com/q> <http://example.com/v> .` + "\n" +
+				"_:r2 " + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .` + "\n" +
+				`_:r2 <http://example.com/x> <http://example.com/y> .`,
+		},
+		{
+			name: "a reifier after a block belongs to no block and still reifies",
+			src:  `:s :p :o {| :q :v |} ~ :r .`,
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o> .` + "\n" +
+				"_:r1 " + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .` + "\n" +
+				`_:r1 <http://example.com/q> <http://example.com/v> .` + "\n" +
+				`<http://example.com/r> ` + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .`,
+		},
+		{
+			name: "a block holds a predicate object list like any other",
+			src:  `:s :p :o ~ :r {| :q :v , :w ; :x :y |} .`,
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o> .` + "\n" +
+				`<http://example.com/r> ` + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .` + "\n" +
+				`<http://example.com/r> <http://example.com/q> <http://example.com/v> .` + "\n" +
+				`<http://example.com/r> <http://example.com/q> <http://example.com/w> .` + "\n" +
+				`<http://example.com/r> <http://example.com/x> <http://example.com/y> .`,
+		},
+		{
+			name: "an annotation nested inside an annotation describes the inner triple",
+			src:  `:s :p :o ~ :r1 {| :q :v ~ :r2 {| :x :y |} |} .`,
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o> .` + "\n" +
+				`<http://example.com/r1> ` + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .` + "\n" +
+				`<http://example.com/r1> <http://example.com/q> <http://example.com/v> .` + "\n" +
+				`<http://example.com/r2> ` + reifies + ` <<( <http://example.com/r1> <http://example.com/q> <http://example.com/v> )>> .` + "\n" +
+				`<http://example.com/r2> <http://example.com/x> <http://example.com/y> .`,
+		},
+		{
+			name: "an annotation after a comma describes the second object's triple",
+			src:  `:s :p :o1 , :o2 ~ :r {| :q :v |} .`,
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o1> .` + "\n" +
+				`<http://example.com/s> <http://example.com/p> <http://example.com/o2> .` + "\n" +
+				`<http://example.com/r> ` + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o2> )>> .` + "\n" +
+				`<http://example.com/r> <http://example.com/q> <http://example.com/v> .`,
+		},
+		{
+			name: "an annotation before a comma describes the first object's triple",
+			src:  `:s :p :o1 ~ :r {| :q :v |} , :o2 .`,
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o1> .` + "\n" +
+				`<http://example.com/s> <http://example.com/p> <http://example.com/o2> .` + "\n" +
+				`<http://example.com/r> ` + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o1> )>> .` + "\n" +
+				`<http://example.com/r> <http://example.com/q> <http://example.com/v> .`,
+		},
+		{
+			name: "an annotation before a semicolon describes the first verb's triple",
+			src:  `:s :p :o ~ :r {| :q :v |} ; :x :y .`,
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o> .` + "\n" +
+				`<http://example.com/s> <http://example.com/x> <http://example.com/y> .` + "\n" +
+				`<http://example.com/r> ` + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> .` + "\n" +
+				`<http://example.com/r> <http://example.com/q> <http://example.com/v> .`,
+		},
+		{
+			name: "every object of a list may carry an annotation of its own",
+			src:  `:s :p :o1 ~ :r1 , :o2 ~ :r2 .`,
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o1> .` + "\n" +
+				`<http://example.com/s> <http://example.com/p> <http://example.com/o2> .` + "\n" +
+				`<http://example.com/r1> ` + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o1> )>> .` + "\n" +
+				`<http://example.com/r2> ` + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/o2> )>> .`,
+		},
+		{
+			name: "an annotation on a reified triple describes the triple that uses its reifier",
+			src:  `:s :p << :a :b :c ~ :i >> ~ :o {| :q :v |} .`,
+			want: `<http://example.com/i> ` + reifies + ` <<( <http://example.com/a> <http://example.com/b> <http://example.com/c> )>> .` + "\n" +
+				`<http://example.com/s> <http://example.com/p> <http://example.com/i> .` + "\n" +
+				`<http://example.com/o> ` + reifies + ` <<( <http://example.com/s> <http://example.com/p> <http://example.com/i> )>> .` + "\n" +
+				`<http://example.com/o> <http://example.com/q> <http://example.com/v> .`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -336,6 +447,74 @@ func TestDecodeDoesNotAssertTheReifiedTriple(t *testing.T) {
 	}
 }
 
+// TestDecodeAssertsTheAnnotatedTriple pins what separates the annotation
+// syntax from the reified-triple sugar: ":s :p :o {| :q :v |}" says that
+// ":s :p :o" holds and then says something about it, where "<< :s :p :o >>"
+// says only the second (RDF 1.2 Turtle §7.3).
+func TestDecodeAssertsTheAnnotatedTriple(t *testing.T) {
+	sources := []string{
+		`:s :p :o {| :q :v |} .`,
+		`:s :p :o ~ :r .`,
+		`:s :p :o ~ :r {| :q :v |} .`,
+	}
+
+	for _, src := range sources {
+		t.Run(src, func(t *testing.T) {
+			var asserted bool
+			for _, triple := range decodeTurtle(t, prefixed+src) {
+				if triple.Predicate == "http://example.com/p" {
+					asserted = true
+				}
+			}
+			if !asserted {
+				t.Error("Decode() did not assert the annotated triple")
+			}
+		})
+	}
+}
+
+// TestDecodeAnnotationOfABlankNodeSubject covers an annotation on a triple
+// whose subject is a node the document did not name, which is the one case
+// [rdf.Isomorphic] cannot state as an expected graph: it compares the blank
+// nodes inside a triple term by label rather than mapping them, and the label a
+// scope mints is its own. So the triples are read back instead.
+func TestDecodeAnnotationOfABlankNodeSubject(t *testing.T) {
+	triples := decodeTurtle(t, prefixed+`:x :y [ :p :o ~ :r {| :q :v |} ] .`)
+
+	// The node the property list describes is whatever ":x :y" points at.
+	var node rdf.Term
+	for _, triple := range triples {
+		if triple.Predicate == "http://example.com/y" {
+			node = triple.Object
+		}
+	}
+	if _, ok := node.(rdf.BlankNode); !ok {
+		t.Fatalf("the property list lowered to %T, want an rdf.BlankNode", node)
+	}
+
+	want := rdf.Triple{
+		Subject:   rdf.IRI("http://example.com/r"),
+		Predicate: vocab.RDFReifies,
+		Object: rdf.TripleTerm{
+			Subject:   node,
+			Predicate: "http://example.com/p",
+			Object:    rdf.IRI("http://example.com/o"),
+		},
+	}
+	if !containsTriple(triples, want) {
+		t.Errorf("Decode() did not reify the triple about the property list's node:\n%s", formatTriples(triples))
+	}
+}
+
+func containsTriple(triples []rdf.Triple, want rdf.Triple) bool {
+	for _, triple := range triples {
+		if triple.Equal(want) {
+			return true
+		}
+	}
+	return false
+}
+
 // TestDecodeMintsAFreshReifierEachTime covers the criterion that a reifier the
 // document did not name is a blank node of its own, so two triples written the
 // same way are still two reifications.
@@ -343,6 +522,8 @@ func TestDecodeMintsAFreshReifierEachTime(t *testing.T) {
 	sources := []string{
 		`:s :p << :a :b :c >> , << :a :b :c >> .`,
 		`:s :p << :a :b :c ~ >> , << :a :b :c ~ >> .`,
+		`:s :p :o {| :q :v |} {| :q :v |} .`,
+		`:s :p :o ~ , :o ~ .`,
 	}
 
 	for _, src := range sources {
@@ -390,6 +571,19 @@ func TestDecodeNestsBeforeItEncloses(t *testing.T) {
 			src:  `:s :p << :a :b << :c :d :e >> >> .`,
 			want: []rdf.IRI{vocab.RDFReifies, vocab.RDFReifies, "http://example.com/p"},
 		},
+		{
+			name: "an annotation comes after the triple it describes",
+			src:  `:s :p :o {| :q :v |} .`,
+			want: []rdf.IRI{"http://example.com/p", vocab.RDFReifies, "http://example.com/q"},
+		},
+		{
+			name: "an annotation of a reified triple waits for both",
+			src:  `:s :p << :a :b :c >> {| :q :v |} .`,
+			want: []rdf.IRI{
+				vocab.RDFReifies, "http://example.com/p",
+				vocab.RDFReifies, "http://example.com/q",
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -433,6 +627,18 @@ func TestDecodeErrors(t *testing.T) {
 		{
 			name: "a base direction that is neither ltr nor rtl",
 			src:  `<http://example.com/s> <http://example.com/p> "o"@en--up .`,
+		},
+		{
+			name: "an undefined prefix in an annotation's reifier",
+			src:  `<http://example.com/s> <http://example.com/p> <http://example.com/o> ~ ex:r .`,
+		},
+		{
+			name: "an undefined prefix inside an annotation block",
+			src:  `<http://example.com/s> <http://example.com/p> <http://example.com/o> {| ex:q <http://example.com/v> |} .`,
+		},
+		{
+			name: "a relative iri inside an annotation block with no base",
+			src:  `<http://example.com/s> <http://example.com/p> <http://example.com/o> {| <q> <http://example.com/v> |} .`,
 		},
 	}
 
@@ -480,18 +686,38 @@ func TestDecodeNoBase(t *testing.T) {
 }
 
 func TestDecodeStopsWhenTheConsumerDoes(t *testing.T) {
-	// The first triple of this document is the reification, which is emitted
-	// from inside the term rather than from the statement, so stopping here is
-	// what unwinds the lowering through its deepest path.
-	src := prefixed + "<< :s :p :o >> :q :r .\n:a :b :c .\n"
-
-	var seen int
-	for range turtle.Decode(strings.NewReader(src)) {
-		seen++
-		break
+	testCases := []struct {
+		name string
+		src  string
+	}{
+		{
+			// The first triple of this document is the reification, which is
+			// emitted from inside the term rather than from the statement, so
+			// stopping here is what unwinds the lowering through its deepest
+			// path.
+			name: "inside a reified triple",
+			src:  prefixed + "<< :s :p :o >> :q :r .\n:a :b :c .\n",
+		},
+		{
+			// An annotation emits after the statement's own triple rather than
+			// before it, so stopping unwinds a path the case above does not
+			// reach.
+			name: "inside an annotation",
+			src:  prefixed + ":s :p :o {| :q :v |} .\n:a :b :c .\n",
+		},
 	}
-	if seen != 1 {
-		t.Errorf("yielded %d triples after break, want 1", seen)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var seen int
+			for range turtle.Decode(strings.NewReader(tc.src)) {
+				seen++
+				break
+			}
+			if seen != 1 {
+				t.Errorf("yielded %d triples after break, want 1", seen)
+			}
+		})
 	}
 }
 
@@ -534,7 +760,7 @@ func TestLower(t *testing.T) {
 	})
 
 	t.Run("a parsed document lowers as Decode does", func(t *testing.T) {
-		src := prefixed + `:s :p << :a :b :c ~ :r >> .`
+		src := prefixed + `:s :p << :a :b :c ~ :r >> ~ :a1 {| :q :v |} .`
 
 		got, err := turtle.Lower(parse(t, src))
 		if err != nil {
