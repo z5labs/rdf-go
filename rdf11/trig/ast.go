@@ -355,6 +355,12 @@ type Literal struct {
 	// Only a string may carry one.
 	Language string
 
+	// LangPos is the position of the '@' beginning the LANGTAG, or the zero
+	// [Pos] if there was none. It is what an error about the language tag
+	// points at, RFC 5646 well-formedness being a constraint on this token
+	// that the grammar does not state.
+	LangPos Pos
+
 	// Datatype is the IRI after the "^^", or nil if none was written. Only a
 	// string may carry one, and the datatype the other kinds imply is not
 	// filled in here — the tree records what was written.

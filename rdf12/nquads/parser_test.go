@@ -116,6 +116,7 @@ func TestParseGraphLabel(t *testing.T) {
 						Object: &nquads.Literal{
 							Pos:       pos(1, 27),
 							Value:     "v",
+							LangPos:   pos(1, 30),
 							Language:  "ar",
 							Direction: "rtl",
 						},
@@ -322,6 +323,7 @@ func TestParseTripleTerms(t *testing.T) {
 							Object: &nquads.Literal{
 								Pos:       pos(1, 59),
 								Value:     "v",
+								LangPos:   pos(1, 62),
 								Language:  "en",
 								Direction: "ltr",
 							},

@@ -152,6 +152,12 @@ type Literal struct {
 	// Language is the language tag without its '@', or "" if there was none.
 	Language string
 
+	// LangPos is the position of the '@' beginning the LANGTAG, or the zero
+	// [Pos] if there was none. It is what an error about the language tag
+	// points at, RFC 5646 well-formedness being a constraint on this token
+	// that the grammar does not state.
+	LangPos Pos
+
 	// Datatype is the IRI after the "^^", or nil if there was none.
 	Datatype *IRIRef
 }
@@ -507,7 +513,7 @@ func parseLiteral(p *parser, quote Token) (*Literal, error) {
 	switch tok.Type {
 	case TokenLangTag:
 		p.discard()
-		literal.Language = string(tok.Value)
+		literal.LangPos, literal.Language = tok.Pos, string(tok.Value)
 	case TokenDatatypeMarker:
 		p.discard()
 

@@ -66,6 +66,7 @@ func TestParseTripleTerms(t *testing.T) {
 							Object: &ntriples.Literal{
 								Pos:       pos(1, 59),
 								Value:     "v",
+								LangPos:   pos(1, 62),
 								Language:  "en",
 								Direction: "ltr",
 							},

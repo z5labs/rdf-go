@@ -306,11 +306,22 @@ func TestDecodeInvalidTerms(t *testing.T) {
 		wantErr error
 	}{
 		{
+			// LANG_DIR admits any run of letters, so the grammar has nothing
+			// to say about a fourteen character primary language subtag. RDF
+			// 1.2 N-Triples §6.2 does: the tag must be well-formed by RFC 5646
+			// §2.2.9, which caps a subtag at eight characters. This is the
+			// W3C test ntriples-langdir-bad-4.
+			name:    "a language tag that is not well-formed",
+			src:     `<http://example.com/s> <http://example.com/p> "v"@cantbethislong .`,
+			wantPos: pos(1, 50),
+			wantErr: rdf.ErrInvalidLanguage,
+		},
+		{
 			// LANG_DIR admits any run of letters after the "--"; only ltr and
 			// rtl are base directions.
 			name:    "a base direction that is neither ltr nor rtl",
 			src:     `<http://example.com/s> <http://example.com/p> "v"@en--xyz .`,
-			wantPos: pos(1, 47),
+			wantPos: pos(1, 50),
 			wantErr: rdf.ErrInvalidDirection,
 		},
 		{

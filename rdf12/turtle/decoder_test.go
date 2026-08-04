@@ -791,6 +791,30 @@ func TestDecodeUndefinedPrefixPosition(t *testing.T) {
 	}
 }
 
+// TestDecodeMalformedLanguageTag covers the one constraint on a language tag
+// that the grammar cannot state. LANG_DIR admits any run of letters, so
+// "cantbethislong" tokenizes; RDF 1.2 §6.2 requires the tag to be well-formed
+// by RFC 5646 §2.2.9, whose subtags stop at eight characters, so it does not
+// become a term. The rule is stated once, on [rdf.NewLanguageLiteral] and
+// [rdf.NewDirectionalLiteral], and reaches Turtle the same way the base
+// direction constraint does.
+func TestDecodeMalformedLanguageTag(t *testing.T) {
+	src := `<http://example.com/s> <http://example.com/p> "o"@cantbethislong .`
+
+	_, err := collect2(turtle.Decode(strings.NewReader(src)))
+	if !errors.Is(err, rdf.ErrInvalidLanguage) {
+		t.Errorf("Decode() error = %v, want it to wrap %v", err, rdf.ErrInvalidLanguage)
+	}
+
+	var invalid turtle.InvalidTermError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("Decode() error = %#v, want an InvalidTermError", err)
+	}
+	if want := pos(1, 50); invalid.Pos != want {
+		t.Errorf("Pos = %s, want %s — the position is the tag's, not the literal's", invalid.Pos, want)
+	}
+}
+
 func TestDecodeNoBase(t *testing.T) {
 	src := `<< <s> <http://example.com/p> <http://example.com/o> >> <http://example.com/q> <http://example.com/r> .`
 

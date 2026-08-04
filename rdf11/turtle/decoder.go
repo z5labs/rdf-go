@@ -411,13 +411,14 @@ func (l *lowering) literal(node *Literal) (rdf.Literal, error) {
 
 	switch {
 	case node.Language != "":
-		// The only way this fails is an empty tag, which the LANGTAG production
-		// cannot produce — it demands a letter. Reported rather than dropped
-		// all the same, since a constructor that can fail should not be assumed
-		// not to.
+		// An empty tag is unreachable from the grammar — LANGTAG demands a
+		// letter — but a tag the grammar admits and RFC 5646 does not is
+		// reachable: the production allows any run of letters, and
+		// well-formedness is stated where RDF terms are built rather than in
+		// the grammar. The position is the tag's, not the literal's.
 		literal, err := rdf.NewLanguageLiteral(node.Value, node.Language)
 		if err != nil {
-			return rdf.Literal{}, InvalidTermError{Pos: node.Pos, Err: err}
+			return rdf.Literal{}, InvalidTermError{Pos: node.LangPos, Err: err}
 		}
 		return literal, nil
 

@@ -149,7 +149,7 @@ func TestParseGraphLabel(t *testing.T) {
 						Pos:       pos(1, 1),
 						Subject:   iriRef(1, 1, "http://e/s"),
 						Predicate: iriRef(1, 14, "http://e/p"),
-						Object:    &nquads.Literal{Pos: pos(1, 27), Value: "v", Language: "en"},
+						Object:    &nquads.Literal{Pos: pos(1, 27), Value: "v", LangPos: pos(1, 30), Language: "en"},
 						Graph:     iriRef(1, 34, "http://e/g"),
 					},
 				},

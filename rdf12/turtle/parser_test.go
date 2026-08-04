@@ -866,14 +866,15 @@ func TestParseRDF11Constructs(t *testing.T) {
 			{
 				src: `:s :p "o"@en .`,
 				want: &turtle.Literal{
-					Pos: pos(1, 7), Kind: turtle.LiteralString, Value: "o", Language: "en",
+					Pos: pos(1, 7), Kind: turtle.LiteralString, Value: "o",
+					LangPos: pos(1, 10), Language: "en",
 				},
 			},
 			{
 				src: `:s :p "o"@en--ltr .`,
 				want: &turtle.Literal{
 					Pos: pos(1, 7), Kind: turtle.LiteralString, Value: "o",
-					Language: "en", Direction: "ltr",
+					LangPos: pos(1, 10), Language: "en", Direction: "ltr",
 				},
 			},
 			{

@@ -95,6 +95,7 @@ func TestParse(t *testing.T) {
 						Object: &ntriples.Literal{
 							Pos:      pos(1, 28),
 							Value:    "text",
+							LangPos:  pos(1, 34),
 							Language: "en-GB",
 						},
 					},

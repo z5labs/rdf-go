@@ -44,6 +44,10 @@ var (
 	// ErrInvalidDirection is reported when a base direction is neither "ltr"
 	// nor "rtl".
 	ErrInvalidDirection = errors.New("rdf: direction must be ltr or rtl")
+
+	// ErrInvalidLanguage is reported when a language tag is not well-formed by
+	// RFC 5646 §2.2.9.
+	ErrInvalidLanguage = errors.New("rdf: language tag is not well-formed")
 )
 
 // Literal is an RDF literal: a lexical form paired with a datatype IRI, and
@@ -53,6 +57,7 @@ var (
 // data model's invariants only hold if they are checked once, at construction:
 //
 //   - a language tag implies the datatype rdf:langString
+//   - a language tag is well-formed by RFC 5646
 //   - a base direction implies the datatype rdf:dirLangString and requires a
 //     non-empty language tag
 //   - a base direction is either "ltr" or "rtl"
@@ -62,6 +67,33 @@ var (
 // Exported fields would let a caller construct a literal that no parser could
 // ever produce — a direction with no language, say — and every printer and
 // comparison downstream would then need to re-validate.
+//
+// # Language tags
+//
+// RDF requires a language tag to be well-formed by RFC 5646 §2.2.9, and both
+// [NewLanguageLiteral] and [NewDirectionalLiteral] enforce it, reporting
+// [ErrInvalidLanguage] when it does not hold. The rule lives here rather than
+// in each syntax's grammar because that is where the specifications put it —
+// RDF 1.2 N-Triples §6.2 states it as a constraint on building a term, and the
+// LANGTAG and LANG_DIR productions admit any run of letters — so stating it
+// once at construction is what makes every parser in this module enforce it.
+//
+// The check is well-formedness in full: the whole Language-Tag grammar of
+// RFC 5646 §2.1, including extlang, script, region, variant, extension and
+// private use subtags, and the irregular grandfathered tags. It is not merely
+// the eight-character cap on the primary language subtag, which is the one
+// piece the W3C conformance suite exercises; a tag such as "en-a" or "en-x" is
+// refused too, because an extension or private use singleton with nothing
+// after it matches no production.
+//
+// What is deliberately not checked is validity, the stronger conformance
+// class of RFC 5646 §2.2.9: whether each subtag appears in the IANA Language
+// Subtag Registry, and whether variant and extension subtags repeat. Validity
+// is a property of a registry that changes independently of this module, and
+// checking it would mean either vendoring a snapshot that goes stale or taking
+// a dependency, and this module has none. RDF asks for well-formedness, so
+// well-formedness is what is enforced: "zz-Qaaa-QM" is accepted here and is
+// not a valid tag.
 //
 // # Language tag comparison
 //
@@ -105,10 +137,15 @@ func NewTypedLiteral(value string, datatype IRI) (Literal, error) {
 // NewLanguageLiteral returns a literal with the given lexical form and
 // language tag. Its datatype is rdf:langString.
 //
-// It reports [ErrEmptyLanguage] if language is empty.
+// It reports [ErrEmptyLanguage] if language is empty, and
+// [ErrInvalidLanguage] if the tag is not well-formed; see the note on
+// [Literal] for what well-formed means here.
 func NewLanguageLiteral(value, language string) (Literal, error) {
 	if language == "" {
 		return Literal{}, ErrEmptyLanguage
+	}
+	if err := wellFormedLanguageTag(language); err != nil {
+		return Literal{}, err
 	}
 	return Literal{value: value, datatype: RDFLangString, language: language}, nil
 }
@@ -117,12 +154,16 @@ func NewLanguageLiteral(value, language string) (Literal, error) {
 // language tag and base direction. Its datatype is rdf:dirLangString.
 //
 // It reports [ErrEmptyLanguage] if language is empty — a base direction
-// without a language tag is not expressible in the data model — and
+// without a language tag is not expressible in the data model —
+// [ErrInvalidLanguage] if the tag is not well-formed, and
 // [ErrInvalidDirection] if direction is neither [DirectionLTR] nor
 // [DirectionRTL].
 func NewDirectionalLiteral(value, language string, direction Direction) (Literal, error) {
 	if language == "" {
 		return Literal{}, ErrEmptyLanguage
+	}
+	if err := wellFormedLanguageTag(language); err != nil {
+		return Literal{}, err
 	}
 	switch direction {
 	case DirectionLTR, DirectionRTL:
