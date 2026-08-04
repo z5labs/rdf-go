@@ -30,6 +30,16 @@ const maxIsomorphismSteps = 100_000
 // labels it invents for blank nodes are its own business and no two
 // implementations need agree on them.
 //
+// A blank node written inside a [TripleTerm] counts as one of the graph's, and
+// is renamed by the same bijection: RDF 1.2 Concepts §3.3 gives a graph's blank
+// nodes as those occurring in its triples, and a triple term's positions are
+// occurrences. So the two graphs
+//
+//	<s> <p> <<( _:a <q> <o> )>> .
+//	<s> <p> <<( _:b <q> <o> )>> .
+//
+// are isomorphic, as the same pair without the brackets would be.
+//
 // A nil *Graph is treated as an empty graph.
 //
 // # Complexity and cutoff
@@ -144,29 +154,47 @@ func newIsoGraph(g *Graph) *isoGraph {
 
 		ground := true
 		// A predicate is an IRI by construction, so only the subject and the
-		// object can be blank.
+		// object can hold a blank node.
 		for _, term := range [2]Term{t.subject, t.object} {
-			node, ok := term.(BlankNode)
-			if !ok {
-				continue
-			}
-			ground = false
+			eachBlankNode(term, func(node BlankNode) {
+				ground = false
 
-			incident := iso.incident[node]
-			if incident == nil {
-				iso.blanks = append(iso.blanks, node)
-			}
-			// A triple whose subject and object are the same blank node is
-			// incident to it once, not twice.
-			if len(incident) == 0 || incident[len(incident)-1] != i {
-				iso.incident[node] = append(incident, i)
-			}
+				incident := iso.incident[node]
+				if incident == nil {
+					iso.blanks = append(iso.blanks, node)
+				}
+				// A triple naming the same blank node twice — as its own
+				// subject and object, or twice inside a triple term — is
+				// incident to it once, not twice.
+				if len(incident) == 0 || incident[len(incident)-1] != i {
+					iso.incident[node] = append(incident, i)
+				}
+			})
 		}
 		iso.ground = append(iso.ground, ground)
 	}
 
 	slices.SortFunc(iso.blanks, compareBlankNodes)
 	return iso
+}
+
+// eachBlankNode calls yield once for every occurrence of a blank node in term,
+// descending into a triple term for the ones nested inside it.
+//
+// A triple term is a term, so a blank node written in one is a blank node of
+// the graph like any other: RDF 1.2 Concepts §3.3 gives the blank nodes of a
+// graph as those occurring in its triples, and a triple term's positions are
+// occurrences. Nothing here treats one differently for being nested, which is
+// what lets a bijection rename it.
+func eachBlankNode(term Term, yield func(BlankNode)) {
+	switch t := term.(type) {
+	case BlankNode:
+		yield(t)
+	case TripleTerm:
+		// A triple term's predicate is an IRI, as a triple's is.
+		eachBlankNode(t.Subject, yield)
+		eachBlankNode(t.Object, yield)
+	}
 }
 
 // neighbours returns the blank nodes sharing a triple with b, excluding b
@@ -178,12 +206,13 @@ func (g *isoGraph) neighbours(b BlankNode) []BlankNode {
 	for _, i := range g.incident[b] {
 		t := g.triples[i]
 		for _, term := range [2]Term{t.subject, t.object} {
-			node, ok := term.(BlankNode)
-			if !ok || seen[node] {
-				continue
-			}
-			seen[node] = true
-			out = append(out, node)
+			eachBlankNode(term, func(node BlankNode) {
+				if seen[node] {
+					return
+				}
+				seen[node] = true
+				out = append(out, node)
+			})
 		}
 	}
 
@@ -282,16 +311,30 @@ func (g *isoGraph) signature(b BlankNode, colours map[BlankNode]uint64) uint64 {
 // writeTermSignature describes term as it appears from self's point of view: a
 // ground term by its canonical form, self by a marker, and any other blank
 // node by its colour alone, which is all that is known about it so far.
+//
+// A triple term is written out position by position rather than by its
+// canonical form, so that the blank nodes in it are described the same way as
+// the ones outside — by colour. Rendering it whole would put their labels in
+// the signature, and a label is exactly what a bijection is free to change.
 func writeTermSignature(b *strings.Builder, term Term, self BlankNode, colours map[BlankNode]uint64) {
-	node, ok := term.(BlankNode)
-	switch {
-	case !ok:
-		b.WriteString(term.String())
-	case node == self:
-		b.WriteString("_:self")
-	default:
+	switch t := term.(type) {
+	case BlankNode:
+		if t == self {
+			b.WriteString("_:self")
+			return
+		}
 		b.WriteString("_:#")
-		b.WriteString(strconv.FormatUint(colours[node], 10))
+		b.WriteString(strconv.FormatUint(colours[t], 10))
+	case TripleTerm:
+		b.WriteString("<<( ")
+		writeTermSignature(b, t.Subject, self, colours)
+		b.WriteByte(' ')
+		b.WriteString(t.Predicate.String())
+		b.WriteByte(' ')
+		writeTermSignature(b, t.Object, self, colours)
+		b.WriteString(" )>>")
+	default:
+		b.WriteString(term.String())
 	}
 }
 
@@ -466,12 +509,25 @@ func (m *matcher) mapTriple(t tripleKey) (tripleKey, bool) {
 	return tripleKey{subject: subject, predicate: t.predicate, object: object}, true
 }
 
-// mapTerm carries term across the bijection. A ground term maps to itself.
+// mapTerm carries term across the bijection. A ground term maps to itself, and
+// a triple term to one with its own positions carried across, so that a blank
+// node nested in it is renamed like any other.
 func (m *matcher) mapTerm(term Term) (Term, bool) {
-	node, isBlank := term.(BlankNode)
-	if !isBlank {
+	switch t := term.(type) {
+	case BlankNode:
+		mapped, ok := m.forward[t]
+		return mapped, ok
+	case TripleTerm:
+		subject, ok := m.mapTerm(t.Subject)
+		if !ok {
+			return nil, false
+		}
+		object, ok := m.mapTerm(t.Object)
+		if !ok {
+			return nil, false
+		}
+		return TripleTerm{Subject: subject, Predicate: t.Predicate, Object: object}, true
+	default:
 		return term, true
 	}
-	mapped, ok := m.forward[node]
-	return mapped, ok
 }

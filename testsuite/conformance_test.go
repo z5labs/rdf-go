@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"text/tabwriter"
 
 	rdf "github.com/z5labs/rdf-go"
 	nquads11 "github.com/z5labs/rdf-go/rdf11/nquads"
@@ -19,6 +20,8 @@ import (
 	turtle11 "github.com/z5labs/rdf-go/rdf11/turtle"
 	nquads12 "github.com/z5labs/rdf-go/rdf12/nquads"
 	ntriples12 "github.com/z5labs/rdf-go/rdf12/ntriples"
+	trig12 "github.com/z5labs/rdf-go/rdf12/trig"
+	turtle12 "github.com/z5labs/rdf-go/rdf12/turtle"
 )
 
 // pinnedCommit is the w3c/rdf-tests commit the vendored suites were taken
@@ -149,6 +152,23 @@ const (
 	canonical
 )
 
+// expectsTheDocumentRead reports whether a test of this kind requires its
+// mf:action to be read without error, which is what makes the document a
+// document of the syntax the suite is for and so what
+// TestRDF11ParsersRefuseRDF12Syntax has something to say about.
+//
+// The three kinds that do are the ones that go on to check something about
+// what was read; the two negative kinds require the opposite, and a document
+// an RDF 1.2 parser must refuse says nothing about which version wrote it.
+func expectsTheDocumentRead(k kind) bool {
+	switch k {
+	case positiveSyntax, eval, canonical:
+		return true
+	default:
+		return false
+	}
+}
+
 // syntax names a concrete syntax. Which parser reads one depends on the
 // specification version the suite is for, so a test says only which syntax its
 // documents are written in and the suite's [spec] supplies the parser.
@@ -225,6 +245,8 @@ var rdf12 = &spec{
 	formats: map[syntax]format{
 		nTriples: {name: "RDF 1.2 N-Triples", decode: decodeNTriples12, canonicalize: canonicalNTriples12},
 		nQuads:   {name: "RDF 1.2 N-Quads", decode: decodeNQuads12, canonicalize: canonicalNQuads12},
+		turtle:   {name: "RDF 1.2 Turtle", decode: decodeTurtle12},
+		triG:     {name: "RDF 1.2 TriG", decode: decodeTriG12},
 	},
 }
 
@@ -276,7 +298,18 @@ func rdft(class string) rdf.IRI { return namespaceRDFT + rdf.IRI(class) }
 // suite is one vendored W3C suite: the directory it sits in under rdf/, which
 // names it, and the version of the specifications whose parsers run it.
 type suite struct {
-	dir  string
+	dir string
+
+	// pkg is the package of this module the suite is a suite for, relative to
+	// the module root. It is what the conformance summary reports a row of the
+	// table under, there being one suite for each of the eight.
+	//
+	// A suite exercises more than its own package — an evaluation test's
+	// expected result is read by the package for the result's syntax — but it
+	// is the parser for the action's syntax that a failure is about, and the
+	// suite is published as that parser's suite.
+	pkg string
+
 	spec *spec
 }
 
@@ -293,29 +326,52 @@ func (s suite) declares(iri rdf.IRI) bool {
 
 // suites are the vendored W3C suites, each run by the parsers of the
 // specification version it is for.
+//
+// There is one for each of the eight format packages this module provides, so
+// running them is running the whole of it.
 var suites = []suite{
-	{dir: "rdf11/rdf-n-triples", spec: rdf11},
-	{dir: "rdf11/rdf-n-quads", spec: rdf11},
-	{dir: "rdf11/rdf-turtle", spec: rdf11},
-	{dir: "rdf11/rdf-trig", spec: rdf11},
-	{dir: "rdf12/rdf-n-triples", spec: rdf12},
-	{dir: "rdf12/rdf-n-quads", spec: rdf12},
+	{dir: "rdf11/rdf-n-triples", pkg: "rdf11/ntriples", spec: rdf11},
+	{dir: "rdf11/rdf-n-quads", pkg: "rdf11/nquads", spec: rdf11},
+	{dir: "rdf11/rdf-turtle", pkg: "rdf11/turtle", spec: rdf11},
+	{dir: "rdf11/rdf-trig", pkg: "rdf11/trig", spec: rdf11},
+	{dir: "rdf12/rdf-n-triples", pkg: "rdf12/ntriples", spec: rdf12},
+	{dir: "rdf12/rdf-n-quads", pkg: "rdf12/nquads", spec: rdf12},
+	{dir: "rdf12/rdf-turtle", pkg: "rdf12/turtle", spec: rdf12},
+	{dir: "rdf12/rdf-trig", pkg: "rdf12/trig", spec: rdf12},
+}
+
+// result is how one suite did: how many of its tests are of each kind, and how
+// many passed, failed or were skipped.
+type result struct {
+	suite   suite
+	counts  map[kind]int
+	passed  int
+	failed  int
+	skipped int
+	total   int
 }
 
 // TestConformance runs every vendored suite from its manifest, one Go subtest
 // per manifest entry, named as the manifest names the test so that a failure
 // can be looked up directly in the W3C suite.
+//
+// It finishes by logging what every suite did as one table, which is the
+// conformance report for the module: there is one suite per format package, so
+// the eight rows are the whole of what this module claims to read. A run with
+// -v prints it whether or not anything failed.
 func TestConformance(t *testing.T) {
+	results := make([]result, 0, len(suites))
+
 	for _, s := range suites {
+		r := result{suite: s, counts: make(map[kind]int)}
+
 		t.Run(s.dir, func(t *testing.T) {
 			entries := entriesOf(loadSuite(t, s))
-
-			counts := make(map[kind]int)
-			var skips int
+			r.total = len(entries)
 
 			for _, entry := range entries {
 				if reason, ok := skipped[testKey(entry)]; ok {
-					skips++
+					r.skipped++
 					t.Run(entry.name, func(t *testing.T) {
 						t.Skipf("%s skipped: %s", testKey(entry), reason)
 					})
@@ -324,22 +380,71 @@ func TestConformance(t *testing.T) {
 
 				typ, ok := testTypes[entry.typ]
 				if !ok {
+					r.failed++
 					t.Errorf("%s: the manifest declares %s, which this harness cannot run; "+
 						"teach it the type or list the test in skipped with a reason", entry.name, entry.typ)
 					continue
 				}
-				counts[typ.kind]++
+				r.counts[typ.kind]++
 
-				t.Run(entry.name, func(t *testing.T) {
+				if t.Run(entry.name, func(t *testing.T) {
 					runEntry(t, s, typ, entry)
-				})
+				}) {
+					r.passed++
+				} else {
+					r.failed++
+				}
 			}
-
-			t.Logf("%s: %d positive syntax, %d negative syntax, %d eval, %d negative eval, %d canonicalization, %d skipped, %d total",
-				s.dir, counts[positiveSyntax], counts[negativeSyntax], counts[eval], counts[negativeEval],
-				counts[canonical], skips, len(entries))
 		})
+
+		results = append(results, r)
 	}
+
+	t.Log("conformance, one row per format package:\n" + report(results))
+}
+
+// report renders the conformance numbers as a table, a row per format package
+// and a row totalling them.
+//
+// The counts by kind are there because the totals alone do not say what was
+// checked: a suite of syntax tests says a parser accepts and rejects the right
+// documents, and only an evaluation or canonicalization test says the parser
+// agrees about what a document means or how it is written.
+func report(results []result) string {
+	var b strings.Builder
+
+	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "package\tsuite\tpass\tfail\tskip\ttotal\tsyntax+\tsyntax-\teval\teval-\tc14n")
+
+	var all result
+	all.counts = make(map[kind]int)
+
+	for _, r := range results {
+		writeReportRow(w, r.suite.pkg, r.suite.dir, r)
+
+		all.passed += r.passed
+		all.failed += r.failed
+		all.skipped += r.skipped
+		all.total += r.total
+		for k, n := range r.counts {
+			all.counts[k] += n
+		}
+	}
+	writeReportRow(w, "all", "", all)
+
+	if err := w.Flush(); err != nil {
+		// A [strings.Builder] never fails to be written to, so this cannot
+		// happen; reporting it beats returning a table with a hole in it.
+		return fmt.Sprintf("rendering the conformance table: %v", err)
+	}
+	return b.String()
+}
+
+func writeReportRow(w io.Writer, pkg, dir string, r result) {
+	fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+		pkg, dir, r.passed, r.failed, r.skipped, r.total,
+		r.counts[positiveSyntax], r.counts[negativeSyntax],
+		r.counts[eval], r.counts[negativeEval], r.counts[canonical])
 }
 
 // runEntry runs one manifest entry against the parsers of the suite's
@@ -551,6 +656,32 @@ func decodeNTriples12(r io.Reader, _ string) (*rdf.Dataset, error) {
 func decodeNQuads12(r io.Reader, _ string) (*rdf.Dataset, error) {
 	d := rdf.NewDataset()
 	for quad, err := range nquads12.Decode(r) {
+		if err != nil {
+			return nil, err
+		}
+		if err := d.Add(quad); err != nil {
+			return nil, err
+		}
+	}
+	return d, nil
+}
+
+func decodeTurtle12(r io.Reader, base string) (*rdf.Dataset, error) {
+	d := rdf.NewDataset()
+	for triple, err := range turtle12.Decode(withBase(r, base)) {
+		if err != nil {
+			return nil, err
+		}
+		if err := d.Add(rdf.Quad{Triple: triple}); err != nil {
+			return nil, err
+		}
+	}
+	return d, nil
+}
+
+func decodeTriG12(r io.Reader, base string) (*rdf.Dataset, error) {
+	d := rdf.NewDataset()
+	for quad, err := range trig12.Decode(withBase(r, base)) {
 		if err != nil {
 			return nil, err
 		}
@@ -799,6 +930,12 @@ var unreferenced = map[string]string{
 	"rdf11/rdf-turtle/localName_with_PN_CHARS_BASE_character_boundaries.nt":  "the manifest declares no test for it",
 	"rdf11/rdf-trig/localName_with_PN_CHARS_BASE_character_boundaries.trig":  "the manifest declares no test for it",
 	"rdf11/rdf-trig/localName_with_PN_CHARS_BASE_character_boundaries.nq":    "the manifest declares no test for it",
+
+	// Each is the next in a run of negative syntax documents whose manifest
+	// stops one short: the RDF 1.2 Turtle suite declares nt-ttl12-bad-01
+	// through -09 and the TriG suite trig12-syntax-bad-01 through -07.
+	"rdf12/rdf-turtle/syntax/nt-ttl12-bad-10.ttl":     "the manifest declares no test for it",
+	"rdf12/rdf-trig/syntax/trig12-syntax-bad-08.trig": "the manifest declares no test for it",
 }
 
 // describes are the files a suite is described by rather than made of, which
@@ -879,35 +1016,43 @@ func TestUnreferencedFilesAreStillThere(t *testing.T) {
 	}
 }
 
-// rdf12Only names the RDF 1.2 tests whose document is written with something
-// RDF 1.2 added — a triple term, or a literal carrying a base direction — and
-// so is not an RDF 1.1 document at all. It is keyed as [testKey] keys a test.
+// rdf12OnlyManifests are the manifests every one of whose documents is written
+// with something RDF 1.2 added, keyed by the manifest's directory under the IRI
+// the suites are published at, with what makes the whole of it RDF 1.2 as the
+// value.
 //
-// It is written out rather than worked out from the document, because what
-// makes a document RDF 1.2 is a judgement about the grammar and belongs
-// somewhere it can be read. Every positive test an RDF 1.2 suite declares is
-// looked up here, both ways round: one listed must be refused by the RDF 1.1
-// parser, and one left out must be read by it. A test whose document changes
-// under it therefore fails rather than quietly deciding it was RDF 1.1 all
-// along.
-var rdf12Only = map[string]bool{
-	// The syntax suites are about RDF 1.2 and nothing else, so every positive
-	// test in them is one.
-	"rdf12/rdf-n-triples/syntax#ntriples12-01":       true,
-	"rdf12/rdf-n-triples/syntax#ntriples12-02":       true,
-	"rdf12/rdf-n-triples/syntax#ntriples12-03":       true,
-	"rdf12/rdf-n-triples/syntax#ntriples12-bnode-1":  true,
-	"rdf12/rdf-n-triples/syntax#ntriples12-nested-1": true,
-	"rdf12/rdf-n-triples/syntax#ntriples-langdir-1":  true,
-	"rdf12/rdf-n-triples/syntax#ntriples-langdir-2":  true,
-	"rdf12/rdf-n-quads/syntax#nquads12-01":           true,
-	"rdf12/rdf-n-quads/syntax#nquads12-02":           true,
-	"rdf12/rdf-n-quads/syntax#nquads12-03":           true,
-	"rdf12/rdf-n-quads/syntax#nquads12-bnode-1":      true,
-	"rdf12/rdf-n-quads/syntax#nquads12-nested-1":     true,
-	"rdf12/rdf-n-quads/syntax#nquads-langdir-1":      true,
-	"rdf12/rdf-n-quads/syntax#nquads-langdir-2":      true,
+// A document written with something RDF 1.2 added — a triple term, a reifier,
+// an annotation, a version directive, or a literal carrying a base direction —
+// is not an RDF 1.1 document at all, and the RDF 1.1 parser for its syntax must
+// refuse it. Which of the RDF 1.2 suites' documents those are is written out
+// here and in [rdf12Only] rather than worked out from the documents, because it
+// is a judgement about the grammar and belongs somewhere it can be read.
+//
+// Every test an RDF 1.2 suite declares whose document must be read is looked up
+// in the two, both ways round: one they say is RDF 1.2 must be refused by the
+// RDF 1.1 parser, and one they do not must be read by it. A test whose document
+// changes under them therefore fails rather than quietly deciding it was RDF 1.1
+// all along — which is why they say which documents are RDF 1.2 and never which
+// the parsers happen to refuse.
+//
+// A manifest belongs here only when the claim holds of every test in it; a
+// manifest holding a mix is left out and its RDF 1.2 tests named one by one in
+// [rdf12Only].
+var rdf12OnlyManifests = map[string]string{
+	"rdf12/rdf-n-triples/syntax": "the syntax suites are about what RDF 1.2 added and nothing else",
+	"rdf12/rdf-n-quads/syntax":   "the syntax suites are about what RDF 1.2 added and nothing else",
+	"rdf12/rdf-turtle/syntax":    "the syntax suites are about what RDF 1.2 added and nothing else",
+	"rdf12/rdf-trig/syntax":      "the syntax suites are about what RDF 1.2 added and nothing else",
 
+	"rdf12/rdf-turtle/eval": "the Turtle and TriG evaluation suites are new in RDF 1.2, and every " +
+		"document in them states a reified triple, a triple term or an annotation",
+	"rdf12/rdf-trig/eval": "the Turtle and TriG evaluation suites are new in RDF 1.2, and every " +
+		"document in them states a reified triple, a triple term or an annotation",
+}
+
+// rdf12Only names the RDF 1.2 tests whose document is RDF 1.2 in a manifest
+// where not every document is, keyed as [testKey] keys a test.
+var rdf12Only = map[string]bool{
 	// The canonicalization suites are mostly the RDF 1.1 documents again, with
 	// these written in what RDF 1.2 added.
 	"rdf12/rdf-n-triples/c14n#dirlangtagged_string": true,
@@ -920,6 +1065,17 @@ var rdf12Only = map[string]bool{
 	"rdf12/rdf-n-quads/c14n#triple-term-02":         true,
 	"rdf12/rdf-n-quads/c14n#triple-term-03":         true,
 	"rdf12/rdf-n-quads/c14n#triple-term-04":         true,
+}
+
+// isRDF12Only reports whether the document of the test keyed by key is written
+// with something RDF 1.2 added, by either the manifest it is declared in or the
+// test itself being listed above.
+func isRDF12Only(key string) bool {
+	manifest, _, _ := strings.Cut(key, "#")
+	if _, ok := rdf12OnlyManifests[manifest]; ok {
+		return true
+	}
+	return rdf12Only[key]
 }
 
 // TestRDF11ParsersRefuseRDF12Syntax feeds every document an RDF 1.2 suite
@@ -952,7 +1108,7 @@ func TestRDF11ParsersRefuseRDF12Syntax(t *testing.T) {
 					continue
 				}
 				typ, ok := testTypes[entry.typ]
-				if !ok || (typ.kind != positiveSyntax && typ.kind != canonical) {
+				if !ok || !expectsTheDocumentRead(typ.kind) {
 					continue
 				}
 
@@ -963,14 +1119,14 @@ func TestRDF11ParsersRefuseRDF12Syntax(t *testing.T) {
 					action, base := localFile(t, entry.action)
 					_, err := decodeFile(action, base, f)
 
-					if rdf12Only[testKey(entry)] {
+					if isRDF12Only(testKey(entry)) {
 						if err == nil {
 							t.Errorf("%s read it without error, want an RDF 1.1 parser to refuse a document written in what RDF 1.2 added", f.name)
 						}
 						return
 					}
 					if err != nil {
-						t.Errorf("%s refused it: %v\nthe test is not listed in rdf12Only, so its document is expected to be RDF 1.1 as well", f.name, err)
+						t.Errorf("%s refused it: %v\nneither rdf12Only nor rdf12OnlyManifests lists it, so its document is expected to be RDF 1.1 as well", f.name, err)
 					}
 				})
 			}
@@ -978,11 +1134,17 @@ func TestRDF11ParsersRefuseRDF12Syntax(t *testing.T) {
 	}
 }
 
-// TestRDF12OnlyTestsExist keeps [rdf12Only] honest, the way TestSkippedTestsExist
-// keeps [skipped] honest: an entry naming a test no RDF 1.2 suite declares as a
-// positive test is one whose assertion nothing makes.
+// TestRDF12OnlyTestsExist keeps [rdf12Only] and [rdf12OnlyManifests] honest,
+// the way TestSkippedTestsExist keeps [skipped] honest: an entry naming a test
+// or a manifest no RDF 1.2 suite declares is one whose assertion nothing makes.
+//
+// A test named in rdf12Only that its manifest already covers is reported too.
+// The two would agree, so nothing would fail — but the entry would be read as
+// singling the test out, when what makes it RDF 1.2 is a claim about the whole
+// manifest.
 func TestRDF12OnlyTestsExist(t *testing.T) {
 	declared := make(map[string]bool)
+	manifests := make(map[string]bool)
 	for _, s := range suites {
 		if s.spec != rdf12 {
 			continue
@@ -992,16 +1154,32 @@ func TestRDF12OnlyTestsExist(t *testing.T) {
 				continue
 			}
 			typ, ok := testTypes[entry.typ]
-			if !ok || (typ.kind != positiveSyntax && typ.kind != canonical) {
+			if !ok || !expectsTheDocumentRead(typ.kind) {
 				continue
 			}
-			declared[testKey(entry)] = true
+
+			key := testKey(entry)
+			declared[key] = true
+
+			manifest, _, _ := strings.Cut(key, "#")
+			manifests[manifest] = true
 		}
 	}
 
 	for key := range rdf12Only {
 		if !declared[key] {
-			t.Errorf("%s is listed as RDF 1.2 only but no RDF 1.2 suite declares it as a positive test", key)
+			t.Errorf("%s is listed as RDF 1.2 only but no RDF 1.2 suite declares it as a test whose document must be read", key)
+			continue
+		}
+		manifest, _, _ := strings.Cut(key, "#")
+		if _, ok := rdf12OnlyManifests[manifest]; ok {
+			t.Errorf("%s is listed as RDF 1.2 only, but the whole of %s already is; remove the entry", key, manifest)
+		}
+	}
+
+	for manifest := range rdf12OnlyManifests {
+		if !manifests[manifest] {
+			t.Errorf("%s is listed as wholly RDF 1.2 but no RDF 1.2 suite declares a test in it", manifest)
 		}
 	}
 }
