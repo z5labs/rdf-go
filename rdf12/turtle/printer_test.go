@@ -752,6 +752,7 @@ func zeroTerm(node turtle.Term) {
 		n.Pos = turtle.Pos{}
 	case *turtle.Literal:
 		n.Pos = turtle.Pos{}
+		n.LangPos = turtle.Pos{}
 		if n.Datatype != nil {
 			zeroTerm(n.Datatype)
 		}

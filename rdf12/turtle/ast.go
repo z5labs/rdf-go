@@ -552,6 +552,12 @@ type Literal struct {
 	// direction, or "" if there was none. Only a string may carry one.
 	Language string
 
+	// LangPos is the position of the '@' beginning the LANG_DIR, or the zero
+	// [Pos] if there was none. It is what an error about the language tag or
+	// the base direction points at, both being constraints on this token that
+	// the grammar does not state.
+	LangPos Pos
+
 	// Direction is the base direction written after the tag's "--", or "" if
 	// there was none. It is what RDF 1.2 adds to the RDF 1.1 LANGTAG.
 	//

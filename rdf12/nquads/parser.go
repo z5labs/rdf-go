@@ -247,6 +247,12 @@ type Literal struct {
 	// direction, or "" if there was no LANG_DIR.
 	Language string
 
+	// LangPos is the position of the '@' beginning the LANG_DIR, or the zero
+	// [Pos] if there was none. It is what an error about the language tag or
+	// the base direction points at, both being constraints on this token that
+	// the grammar does not state.
+	LangPos Pos
+
 	// Direction is the base direction written after the tag's "--", or "" if
 	// there was none.
 	//
@@ -785,6 +791,7 @@ func parseLiteral(p *parser, quote Token) (*Literal, error) {
 	switch tok.Type {
 	case TokenLangDir:
 		p.discard()
+		literal.LangPos = tok.Pos
 		literal.Language, literal.Direction = splitLangDir(string(tok.Value))
 	case TokenDatatypeMarker:
 		p.discard()

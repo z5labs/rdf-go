@@ -771,18 +771,19 @@ func (l *lowering) literal(node *Literal) (rdf.Literal, error) {
 		// rather than in the grammar.
 		literal, err := rdf.NewDirectionalLiteral(node.Value, node.Language, rdf.Direction(node.Direction))
 		if err != nil {
-			return rdf.Literal{}, InvalidTermError{Pos: node.Pos, Err: err}
+			return rdf.Literal{}, InvalidTermError{Pos: node.LangPos, Err: err}
 		}
 		return literal, nil
 
 	case node.Language != "":
-		// The only way this fails is an empty tag, which the LANG_DIR production
-		// cannot produce — it demands a letter. Reported rather than dropped
-		// all the same, since a constructor that can fail should not be assumed
-		// not to.
+		// An empty tag is unreachable from the grammar — LANG_DIR demands a
+		// letter — but a tag the grammar admits and RFC 5646 does not is
+		// reachable: the production allows any run of letters, and
+		// well-formedness is stated where RDF terms are built rather than in
+		// the grammar, beside the base direction rule above.
 		literal, err := rdf.NewLanguageLiteral(node.Value, node.Language)
 		if err != nil {
-			return rdf.Literal{}, InvalidTermError{Pos: node.Pos, Err: err}
+			return rdf.Literal{}, InvalidTermError{Pos: node.LangPos, Err: err}
 		}
 		return literal, nil
 

@@ -56,27 +56,13 @@ const publishedAt = "https://w3c.github.io/rdf-tests/rdf/"
 // the label it has, and the labels a document's blank nodes have after
 // decoding are minted rather than the ones it wrote. Comparing the two as text
 // therefore compares labels neither specification fixes.
-//
-// The malformedLanguageTag entry is the RDF 1.2 N-Triples suite asking for a
-// check no part of this module makes yet. The grammar is not what refuses
-// "Hello"@cantbethislong — LANG_DIR admits any run of letters — it is RDF 1.2
-// N-Triples §6.2, which has the term constructor require the tag to be
-// well-formed by RFC 5646 §2.2.9, and a primary subtag of fourteen letters is
-// not. Deciding that is a BCP 47 parser, which this module does not have and
-// cannot take from anywhere while its dependency count is zero, so it is work
-// of its own rather than a line of this harness.
 var skipped = map[string]string{
 	"rdf12/rdf-n-triples/c14n#triple-term-02": mintedBlankNodeLabels,
 	"rdf12/rdf-n-quads/c14n#triple-term-02":   mintedBlankNodeLabels,
-
-	"rdf12/rdf-n-triples/syntax#ntriples-langdir-bad-4": malformedLanguageTag,
 }
 
 const mintedBlankNodeLabels = "the document names a blank node, and canonical form does not fix " +
 	"blank node labels: Decode mints them, so the text differs where nothing about the graph does"
-
-const malformedLanguageTag = "the language tag is within LANG_DIR but not well-formed by RFC 5646 " +
-	"§2.2.9, and nothing here checks that yet: it takes a BCP 47 parser this module does not have"
 
 // testKey names a test by its own IRI, with the IRI the suites are published
 // under taken off the front — "rdf12/rdf-n-triples/syntax#ntriples12-01".

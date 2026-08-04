@@ -1017,6 +1017,7 @@ func parseRDFLiteral(p *parser) (*Literal, error) {
 	switch tok.Type {
 	case TokenLangDir:
 		p.discard()
+		literal.LangPos = tok.Pos
 		literal.Language, literal.Direction = splitLangDir(string(tok.Value))
 	case TokenDatatypeMarker:
 		p.discard()

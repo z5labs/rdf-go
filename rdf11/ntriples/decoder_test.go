@@ -290,6 +290,15 @@ func TestDecodeInvalidTerms(t *testing.T) {
 		wantErr error
 	}{
 		{
+			// RDF 1.1 asks for a well-formed language tag as RDF 1.2 does, and
+			// LANGTAG admits any run of letters just as LANG_DIR does, so the
+			// rule the rdf package states reaches this syntax too.
+			name:    "a language tag that is not well-formed by RFC 5646",
+			src:     `<http://example.com/s> <http://example.com/p> "v"@cantbethislong .`,
+			wantPos: pos(1, 50),
+			wantErr: rdf.ErrInvalidLanguage,
+		},
+		{
 			name:    "rdf:langString without a language tag",
 			src:     `<http://example.com/s> <http://example.com/p> "v"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#langString> .`,
 			wantPos: pos(1, 52),

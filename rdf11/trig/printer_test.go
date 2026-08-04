@@ -587,6 +587,7 @@ func zeroTerm(node trig.Term) {
 		n.Pos = trig.Pos{}
 	case *trig.Literal:
 		n.Pos = trig.Pos{}
+		n.LangPos = trig.Pos{}
 		if n.Datatype != nil {
 			zeroTerm(n.Datatype)
 		}
