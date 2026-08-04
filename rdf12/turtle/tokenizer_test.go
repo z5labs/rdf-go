@@ -450,8 +450,18 @@ func TestTokenizeVersionSpecifier(t *testing.T) {
 				},
 			},
 			{
-				name: "a specifier holding an escape is decoded",
+				name: "a specifier is read as the string it is",
 				src:  `VERSION "1.2"`,
+				expected: []turtle.Token{
+					tok(1, 1, turtle.TokenVersion, "VERSION"),
+					tok(1, 9, turtle.TokenString, "1.2"),
+				},
+			},
+			{
+				// A specifier is a STRING_LITERAL_QUOTE and so admits every
+				// escape one does, decoded here as anywhere else.
+				name: "a specifier holding an escape is decoded",
+				src:  "VERSION \"1\\u002E2\"",
 				expected: []turtle.Token{
 					tok(1, 1, turtle.TokenVersion, "VERSION"),
 					tok(1, 9, turtle.TokenString, "1.2"),
