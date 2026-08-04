@@ -51,9 +51,26 @@ on:
 # instead, and that path writes to repository contents. Because the loop labels
 # only after checks pass, the immediate path is the common one — `contents: read`
 # fails it with `Resource not accessible by integration (mergePullRequest)`.
+#
+# `issues: write` covers the linked issue, which this workflow has never managed
+# to close. A pull request body carrying `Closes #N` does register a closing
+# reference — that half works, and was confirmed on #84, #85 and #87, whose
+# `closingIssuesReferences` held #60, #75 and #61 respectively. All three issues
+# stayed open regardless, and each one's `closed` event names a person with
+# `commit=none`: `/next-issue` closing it by hand, not GitHub acting on the
+# reference. The auto close is performed *as the merging actor*; that actor is
+# `github-actions[bot]` acting through this token, so it is bounded by the
+# permissions here, and closing an issue needs `issues: write`.
+#
+# Whether that is the whole story is not proven — `/next-issue` closes the issue
+# explicitly regardless, and that close is idempotent, so this changes nothing if
+# the cause lies elsewhere. It is worth the line because an issue left open is one
+# the next iteration selects again, and the loop then re-implements work it has
+# already merged.
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   enable-auto-merge:
