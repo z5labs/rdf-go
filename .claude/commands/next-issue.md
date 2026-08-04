@@ -179,12 +179,49 @@ the warning in step 6:
 
 ```
 for i in $(seq 1 40); do
-  n=$(gh api repos/z5labs/rdf-go/pulls/<pr>/reviews --jq 'length' 2>/dev/null || echo 0)
+  n=$(gh api --paginate repos/z5labs/rdf-go/issues/<pr>/timeline \
+        --jq '.[]|select(.event=="reviewed")
+              |select(.user.login|test("copilot";"i"))|.id' 2>/dev/null | wc -l)
   if [ "$n" -gt 0 ]; then echo "copilot review landed"; exit 0; fi
   sleep 15
 done
 echo "copilot review timed out"; exit 1
 ```
+
+Two filters, both load bearing.
+
+`--paginate`, because the timeline returns thirty events per page by default, and a pull
+request that saw several pushes, check runs and comments will push the `reviewed` event off
+the first page — where an unpaginated read reports zero and the loop times out on a reviewed
+pull request, which is the exact failure this step exists to avoid. Counting `.id` lines
+rather than taking a `length` per page is what makes the count work across pages.
+
+The `copilot` login filter, because a `reviewed` event from *anyone* would otherwise end the
+wait. The repository owner reviewing a pull request while Copilot was still working would
+satisfy this loop, and step 9 would then be deciding on a review that never arrived. The
+gate is specifically that Copilot completed; the wait has to be specific in the same way.
+Matching is case-insensitive on purpose — the timeline reports this reviewer as `Copilot`
+while the `pulls/` endpoints report `copilot-pull-request-reviewer[bot]`.
+
+The wait polls the **timeline**, not `pulls/<pr>/reviews`. The reviews endpoint — and the
+equivalent GraphQL query — have been seen returning an empty array for as long as forty
+minutes after Copilot had in fact submitted, while the timeline showed it immediately.
+Polling the reviews endpoint therefore produces a timeout on a pull request that was
+reviewed, and that reads as a missing review rather than as the API lagging.
+
+**Never report `BLOCKED` for a missing review without checking the timeline first:**
+
+```
+gh api --paginate repos/z5labs/rdf-go/issues/<pr>/timeline \
+  --jq '.[]|select(.event=="reviewed")|select(.user.login|test("copilot";"i"))' \
+  | jq -s 'sort_by(.submitted_at)|last|{user:.user.login,state,body}'
+```
+
+Same two filters, for the same two reasons — without the login filter this returns whichever
+review is newest, which after a human comment is not Copilot's. And `jq -s` because it
+slurps the per-page objects back into one array before sorting: sorting inside `--jq` would
+sort each page separately and give you the last review *of the last page*, not the last
+review.
 
 A non-empty `reviews` array does **not** mean the PR was reviewed. Copilot posts a review
 whose body declines the work — most often `"Copilot wasn't able to review this pull request
@@ -212,6 +249,10 @@ enabled for the org), the cycle does **not** merge — see step 9.
 
 Pull both the summary review and the inline comments — a review with `"generated no
 comments"` in its body still counts as having reviewed:
+
+If the reviews endpoint is still lagging (step 7), read the body from the timeline instead —
+the `reviewed` events carry the same `state` and `body`. An empty result here is a stale
+endpoint, not an absent review.
 
 ```
 gh api repos/z5labs/rdf-go/pulls/<pr>/reviews --jq '.[] | "\(.user.login) [\(.state)]\n\(.body)"'
@@ -287,15 +328,22 @@ gh pr view <pr> --json state,autoMergeRequest -q '"\(.state) \(.autoMergeRequest
   checks have already passed, and since this cycle labels only after they pass, this is the
   usual result. `not-armed` beside `MERGED` is correct, not a fault.
 - `OPEN <timestamp>` — auto merge is armed and waiting on a check still running.
-- `OPEN not-armed` — the label was not acted on. Check the workflow run before doing
-  anything else:
+- `OPEN not-armed` — **usually just means the workflow has not started yet.** The run is
+  queued for a few seconds after the label lands, and reading the pull request immediately
+  will show this every time. It is not evidence of a failure on its own.
+
+Do not conclude anything from `OPEN not-armed` until the workflow run has actually finished.
+The run list is what disambiguates:
 
 ```
 gh run list --repo z5labs/rdf-go --workflow auto-merge.yaml --limit 1
 ```
 
-A failed run means the workflow itself is broken — report it rather than falling back to a
-manual merge, which is what this whole step exists to avoid.
+Wait for it to leave `queued` and `in_progress`. A `success` conclusion with the pull
+request still open means auto merge is armed and waiting on a check. A `failure` conclusion
+means the workflow itself is broken — report it, with the output of
+`gh run view <id> --log-failed`, rather than falling back to a manual merge, which is what
+this whole step exists to avoid.
 
 ## 10. Wait for the merge, then clean up
 
@@ -323,23 +371,59 @@ If a required check fails, auto merge stays armed and the PR stays open; fix the
 push, and it merges when the rerun is green. If it stays `OPEN` with nothing running,
 report it rather than merging by hand.
 
-Once the state really is `MERGED`, confirm the issue closed and drop the worktree:
+**Never delete the remote branch.** The `delete-merged-branch` job in
+`.github/workflows/auto-merge.yaml` owns remote cleanup; leave it to do its job. `git push
+--delete` is denied by user settings, and a subagent must not work around that rule. Clean
+up only what you created locally: your own worktree and your own local branch (below).
+
+Note that `deleteBranchOnMerge` on the repository does **not** cover this. It fires for a
+merge a person performs, not for one the auto merge workflow performs with its
+`GITHUB_TOKEN`, which is why that job exists at all. If a branch outlives its merge, the fix
+belongs in the workflow, not in a `git push` here.
+
+Once the state really is `MERGED`, one thing the repository normally does on your behalf
+will not have happened: a merge performed by the workflow's `GITHUB_TOKEN` does not close
+the issue the way a merge performed by a person does. It is not a formality — do it.
+
+**Close the issue.** A `Closes #<n>` line in the pull request body has been observed not
+closing it. An issue left open is one the next invocation of this command selects again, so
+the loop re-implements work it has already merged:
 
 ```
 gh issue view <n> --json state -q .state
+```
+
+If that says `OPEN`, close it explicitly and say in the comment which pull request did the
+work, so the trail is not just a bare state change:
+
+```
+gh issue close <n> --repo z5labs/rdf-go --comment "Implemented in #<pr>, merged as <sha>."
+```
+
+Re-read the state afterwards and confirm it is `CLOSED` before moving on.
+
+Then drop the worktree:
+
+```
 git worktree remove .claude/worktrees/issue-<n>
 ```
 
 Then bring the main checkout up to date so the next iteration branches from the merged
-state. `git worktree list` reports it first, so it needs no hard-coded path:
+state, and delete your own local branch. `git worktree list` reports the main checkout
+first, so it needs no hard-coded path:
 
 ```
 git -C "$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)" checkout main
 git -C "$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)" pull
+git -C "$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)" branch -D issue-<n>
 ```
 
-The repo allows squash merges only and has `deleteBranchOnMerge` enabled, so the remote
-branch is removed for you.
+A stale *local* branch is what breaks a retry — `git worktree add -b issue-<n>` fails against
+an existing branch, and the retry then reports `BLOCKED` on a name collision rather than on
+anything real. The remote side needs nothing from you.
+
+If the pull request did not merge, leave the worktree in place and report `BLOCKED` with the
+PR number and the last state you saw.
 
 ## Report
 
