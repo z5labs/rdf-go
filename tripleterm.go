@@ -41,11 +41,10 @@ import "strings"
 //
 // # Blank nodes
 //
-// [Isomorphic] does not look inside a triple term: a blank node nested in one
-// is compared by its label rather than mapped by the bijection. Two graphs
-// that differ only in the label of such a blank node are reported as not
-// isomorphic. Blank nodes in the subject and object positions of a statement
-// are mapped as always.
+// A blank node nested in a triple term is a blank node of the graph like any
+// other, and [Isomorphic] maps it with the bijection: two graphs differing only
+// in the label of one are isomorphic, as they are when the label differs in the
+// subject or object position of a statement.
 type TripleTerm struct {
 	// Subject is the resource the enclosed statement is about: an [IRI] or a
 	// [BlankNode]. A [Literal] or another TripleTerm here is rejected by

@@ -25,6 +25,20 @@
 // syntax tests and nothing else. This one runs evaluation tests too, and so
 // checks what a document means rather than only that it parses.
 //
+// # The conformance numbers
+//
+// There is one vendored suite for each of this module's eight format packages,
+// so running them is running the whole of it. TestConformance finishes by
+// logging one table with a row per package — how many of its suite's tests
+// passed, failed and were skipped, and how many are of each kind — so that what
+// the module conforms to is read in one place rather than assembled from eight
+// subtests. `go test -v ./testsuite` prints it whether or not anything failed.
+//
+// The counts by kind are in the table because the totals alone do not say what
+// was checked. A syntax test says a parser accepts and rejects the right
+// documents; only an evaluation or canonicalization test says it agrees about
+// what a document means or how it is written.
+//
 // # One suite, one version of the specifications
 //
 // A suite is run by the parsers of the RDF version it is a suite for: the
@@ -41,9 +55,21 @@
 // does: every document an RDF 1.2 suite expects to be read is handed to the
 // RDF 1.1 parser for its syntax, and must be refused where it is written with
 // something RDF 1.2 added and read where it is not. Which of the two a
-// document is is written out in rdf12Only rather than worked out, so that a
-// document changing under the harness fails rather than quietly changing what
-// is asserted about it.
+// document is is written out — a manifest at a time in rdf12OnlyManifests
+// where the whole of one is RDF 1.2, a test at a time in rdf12Only where it
+// holds a mix — rather than worked out, so that a document changing under the
+// harness fails rather than quietly changing what is asserted about it.
+//
+// # Evaluation tests
+//
+// An evaluation test compares graphs, not text, because a parser is only
+// required to produce a graph isomorphic to the expected one: the labels it
+// invents for blank nodes are its own business. rdf.Isomorphic decides that,
+// and a dataset reduces to a graph it can answer for — see isomorphic in
+// conformance_test.go. Blank nodes nested inside a triple term are renamed by
+// the same bijection as any other, which is what the RDF 1.2 Turtle and TriG
+// evaluation suites turn on: most of their tests state a reified triple, whose
+// reifier is a blank node when the document does not name one.
 //
 // # Canonicalization tests
 //
@@ -53,6 +79,11 @@
 // leaves open is blank node labels, which canonical form does not fix and the
 // encoders do not either, so the two tests whose documents name a blank node
 // are skipped with that as the reason.
+//
+// The RDF 1.2 Turtle and TriG suites have no canonicalization tests: RDF 1.2
+// defines a canonical form for N-Triples and N-Quads and for nothing else.
+// Where those suites have a c14n directory the Turtle and TriG ones have an
+// eval directory instead.
 //
 // # Reading a manifest with the parser it tests
 //

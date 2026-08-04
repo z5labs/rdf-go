@@ -102,12 +102,22 @@ func keyOf(t Triple) tripleKey {
 //
 // Lowercasing agrees with the [strings.EqualFold] comparison [Literal.Equal]
 // performs because a language tag is ASCII (BCP 47 §2.1).
+//
+// A triple term is folded position by position, because [TripleTerm.Equal]
+// compares its positions with term equality too: a literal nested in one is as
+// much the same term written twice as a literal in the object position is, and
+// a key that folded only the outer terms would let a graph hold both spellings.
 func foldTerm(t Term) Term {
-	l, ok := t.(Literal)
-	if !ok {
+	switch term := t.(type) {
+	case Literal:
+		term.datatype = term.Datatype()
+		term.language = strings.ToLower(term.language)
+		return term
+	case TripleTerm:
+		term.Subject = foldTerm(term.Subject)
+		term.Object = foldTerm(term.Object)
+		return term
+	default:
 		return t
 	}
-	l.datatype = l.Datatype()
-	l.language = strings.ToLower(l.language)
-	return l
 }

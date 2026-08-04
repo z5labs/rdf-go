@@ -283,6 +283,139 @@ func TestIsomorphic(t *testing.T) {
 	}
 }
 
+// graphOfTriples builds a graph from triples given whole, for the cases the
+// [3]string shorthand cannot write: a triple term has a shape rather than a
+// spelling.
+func graphOfTriples(t *testing.T, triples ...rdf.Triple) *rdf.Graph {
+	t.Helper()
+
+	g := rdf.NewGraph()
+	for _, triple := range triples {
+		if err := g.Add(triple); err != nil {
+			t.Fatalf("Add(%s) = %v, want nil", triple, err)
+		}
+	}
+	return g
+}
+
+// TestIsomorphicLooksInsideTripleTerms covers the blank nodes RDF 1.2 lets a
+// graph hold inside a triple term, which are blank nodes of the graph like any
+// other and so are the bijection's to rename.
+//
+// The RDF 1.2 Turtle and TriG evaluation suites turn on this: a reified triple
+// whose reifier the document does not name mints a blank node for it, so the
+// expected result differs from what a parser produces in exactly the label of a
+// blank node standing in a triple term.
+func TestIsomorphicLooksInsideTripleTerms(t *testing.T) {
+	const (
+		p  = rdf.IRI("http://example.com/p")
+		q  = rdf.IRI("http://example.com/q")
+		s  = rdf.IRI("http://example.com/s")
+		o  = rdf.IRI("http://example.com/o")
+		o2 = rdf.IRI("http://example.com/o2")
+	)
+
+	// reifies states that node reifies the triple s q object.
+	reifies := func(node rdf.Term, object rdf.Term) rdf.Triple {
+		return rdf.Triple{
+			Subject:   node,
+			Predicate: p,
+			Object:    rdf.TripleTerm{Subject: s, Predicate: q, Object: object},
+		}
+	}
+
+	tests := []struct {
+		name string
+		a    []rdf.Triple
+		b    []rdf.Triple
+		want bool
+	}{
+		{
+			name: "a blank node in a triple term is renamed like any other",
+			a:    []rdf.Triple{{Subject: s, Predicate: p, Object: rdf.TripleTerm{Subject: rdf.NewBlankNode("a"), Predicate: q, Object: o}}},
+			b:    []rdf.Triple{{Subject: s, Predicate: p, Object: rdf.TripleTerm{Subject: rdf.NewBlankNode("x"), Predicate: q, Object: o}}},
+			want: true,
+		},
+		{
+			name: "a blank node nested two triple terms deep is renamed too",
+			a: []rdf.Triple{{Subject: s, Predicate: p, Object: rdf.TripleTerm{
+				Subject: s, Predicate: q, Object: rdf.TripleTerm{Subject: rdf.NewBlankNode("a"), Predicate: q, Object: o},
+			}}},
+			b: []rdf.Triple{{Subject: s, Predicate: p, Object: rdf.TripleTerm{
+				Subject: s, Predicate: q, Object: rdf.TripleTerm{Subject: rdf.NewBlankNode("x"), Predicate: q, Object: o},
+			}}},
+			want: true,
+		},
+		{
+			name: "ground triple terms still have to match exactly",
+			a:    []rdf.Triple{{Subject: rdf.NewBlankNode("a"), Predicate: p, Object: rdf.TripleTerm{Subject: s, Predicate: q, Object: o}}},
+			b:    []rdf.Triple{{Subject: rdf.NewBlankNode("x"), Predicate: p, Object: rdf.TripleTerm{Subject: s, Predicate: q, Object: o2}}},
+		},
+		{
+			name: "a blank node shared between a statement and a triple term stays shared",
+			a:    []rdf.Triple{{Subject: rdf.NewBlankNode("a"), Predicate: p, Object: rdf.TripleTerm{Subject: rdf.NewBlankNode("a"), Predicate: q, Object: o}}},
+			b:    []rdf.Triple{{Subject: rdf.NewBlankNode("x"), Predicate: p, Object: rdf.TripleTerm{Subject: rdf.NewBlankNode("y"), Predicate: q, Object: o}}},
+		},
+		{
+			name: "position inside a triple term is part of the structure",
+			a:    []rdf.Triple{{Subject: s, Predicate: p, Object: rdf.TripleTerm{Subject: rdf.NewBlankNode("a"), Predicate: q, Object: o}}},
+			b:    []rdf.Triple{{Subject: s, Predicate: p, Object: rdf.TripleTerm{Subject: s, Predicate: q, Object: rdf.NewBlankNode("x")}}},
+		},
+		{
+			// Two reifiers the colouring cannot tell apart: whichever way round
+			// the bijection sends them, the graphs agree.
+			name: "two interchangeable reifiers",
+			a:    []rdf.Triple{reifies(rdf.NewBlankNode("a"), o), reifies(rdf.NewBlankNode("b"), o)},
+			b:    []rdf.Triple{reifies(rdf.NewBlankNode("x"), o), reifies(rdf.NewBlankNode("y"), o)},
+			want: true,
+		},
+		{
+			// Here the triple terms tell the reifiers apart, so only one
+			// bijection can work.
+			name: "reifiers the triple terms tell apart",
+			a:    []rdf.Triple{reifies(rdf.NewBlankNode("a"), o), reifies(rdf.NewBlankNode("b"), o2)},
+			b:    []rdf.Triple{reifies(rdf.NewBlankNode("y"), o2), reifies(rdf.NewBlankNode("x"), o)},
+			want: true,
+		},
+		{
+			name: "a reifier chain, its links relabelled",
+			a: []rdf.Triple{
+				reifies(rdf.NewBlankNode("a"), o),
+				{Subject: rdf.NewBlankNode("b"), Predicate: p, Object: rdf.TripleTerm{Subject: rdf.NewBlankNode("a"), Predicate: p, Object: o}},
+			},
+			b: []rdf.Triple{
+				reifies(rdf.NewBlankNode("x"), o),
+				{Subject: rdf.NewBlankNode("y"), Predicate: p, Object: rdf.TripleTerm{Subject: rdf.NewBlankNode("x"), Predicate: p, Object: o}},
+			},
+			want: true,
+		},
+		{
+			name: "a reifier chain whose links point the other way",
+			a: []rdf.Triple{
+				reifies(rdf.NewBlankNode("a"), o),
+				{Subject: rdf.NewBlankNode("b"), Predicate: p, Object: rdf.TripleTerm{Subject: rdf.NewBlankNode("a"), Predicate: p, Object: o}},
+			},
+			b: []rdf.Triple{
+				reifies(rdf.NewBlankNode("x"), o),
+				{Subject: rdf.NewBlankNode("x"), Predicate: p, Object: rdf.TripleTerm{Subject: rdf.NewBlankNode("y"), Predicate: p, Object: o}},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			a, b := graphOfTriples(t, test.a...), graphOfTriples(t, test.b...)
+
+			if got := rdf.Isomorphic(a, b); got != test.want {
+				t.Errorf("Isomorphic(a, b) = %t, want %t", got, test.want)
+			}
+			if got := rdf.Isomorphic(b, a); got != test.want {
+				t.Errorf("Isomorphic(b, a) = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
 func TestIsomorphicIsReflexive(t *testing.T) {
 	tests := []struct {
 		name  string

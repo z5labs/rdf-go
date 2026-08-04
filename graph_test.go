@@ -92,6 +92,23 @@ func TestGraphDeduplication(t *testing.T) {
 			want: 1,
 		},
 		{
+			// The folding a key applies reaches into a triple term, because
+			// TripleTerm.Equal compares its positions with term equality too.
+			name: "triple terms enclosing literals that differ only in language tag case",
+			build: func(t *testing.T) (rdf.Triple, rdf.Triple) {
+				enclosing := func(object rdf.Term) rdf.Triple {
+					return tripleOf("http://example.com/s", "http://example.com/p", rdf.TripleTerm{
+						Subject:   rdf.IRI("http://example.com/a"),
+						Predicate: "http://example.com/b",
+						Object:    object,
+					})
+				}
+				return enclosing(mustLanguageLiteral(t, "o", "en-GB")),
+					enclosing(mustLanguageLiteral(t, "o", "EN-gb"))
+			},
+			want: 1,
+		},
+		{
 			name: "a different object is a different triple",
 			build: func(*testing.T) (rdf.Triple, rdf.Triple) {
 				return tripleOf("http://example.com/s", "http://example.com/p", rdf.NewLiteral("o")),
