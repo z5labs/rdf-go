@@ -72,11 +72,12 @@ func Seeds(ext string, suites ...string) ([]string, error) {
 			if err != nil {
 				return err
 			}
-			if seen[string(b)] {
+			seed := string(b)
+			if seen[seed] {
 				return nil
 			}
-			seen[string(b)] = true
-			seeds = append(seeds, string(b))
+			seen[seed] = true
+			seeds = append(seeds, seed)
 			return nil
 		})
 		if err != nil {
