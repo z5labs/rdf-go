@@ -48,6 +48,11 @@ func TestQuadValidate(t *testing.T) {
 			},
 			want: rdf.ErrInvalidSubject,
 		},
+		{
+			name: "a graph name no syntax can write is rejected",
+			quad: rdf.Quad{Triple: triple, Graph: rdf.IRI("http://example.com/a b")},
+			want: rdf.ErrInvalidIRI,
+		},
 	}
 
 	for _, test := range tests {

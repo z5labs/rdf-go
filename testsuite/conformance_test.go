@@ -49,22 +49,6 @@ const publishedAt = "https://w3c.github.io/rdf-tests/rdf/"
 // quietly passed over, and the manifest is what decides which tests there are,
 // so a test left out of this map is a test that runs.
 //
-// The six escapedIRICharacter entries are all one disagreement. Each writes a
-// character the IRIREF production excludes — a space, '<', '>' — as a UCHAR,
-// and expects the document to be rejected: an escape is a way of spelling a
-// character, not a way of getting one past the grammar. This module's
-// tokenizers accept them, and cannot simply be taught otherwise, because
-// [rdf.IRI]'s own N-Triples rendering writes exactly those characters as
-// UCHARs (see escapeIRI in the root package) so that an IRI holding one can be
-// written down at all. Making the tokenizers refuse what the printers emit
-// would break that round trip, and deciding what a printer should do instead
-// with an IRI that no syntax can write is a change to the printers' contract
-// rather than to this harness.
-//
-// Nothing else in either suite is affected: only an IRI that is already
-// outside the data model, RFC 3987 admitting none of these characters, can
-// reach the escaping at all.
-//
 // The two mintedBlankNodeLabels entries are the one place a canonicalization
 // test asks for something the RDF 1.2 encoders do not promise. Canonical form
 // settles the writing and says nothing about which labels the blank nodes
@@ -82,21 +66,11 @@ const publishedAt = "https://w3c.github.io/rdf-tests/rdf/"
 // cannot take from anywhere while its dependency count is zero, so it is work
 // of its own rather than a line of this harness.
 var skipped = map[string]string{
-	"rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-uri-escape-01": escapedIRICharacter,
-	"rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-uri-escape-02": escapedIRICharacter,
-	"rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-uri-escape-03": escapedIRICharacter,
-	"rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-uri-escape-01":     escapedIRICharacter,
-	"rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-uri-escape-02":     escapedIRICharacter,
-	"rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-uri-escape-03":     escapedIRICharacter,
-
 	"rdf12/rdf-n-triples/c14n#triple-term-02": mintedBlankNodeLabels,
 	"rdf12/rdf-n-quads/c14n#triple-term-02":   mintedBlankNodeLabels,
 
 	"rdf12/rdf-n-triples/syntax#ntriples-langdir-bad-4": malformedLanguageTag,
 }
-
-const escapedIRICharacter = "the tokenizers accept a UCHAR naming a character IRIREF excludes, " +
-	"because the printers write one to render an IRI that holds it"
 
 const mintedBlankNodeLabels = "the document names a blank node, and canonical form does not fix " +
 	"blank node labels: Decode mints them, so the text differs where nothing about the graph does"

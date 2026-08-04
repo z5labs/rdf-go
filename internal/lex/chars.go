@@ -68,6 +68,31 @@ func IsPNLocalEsc(r rune) bool {
 	return strings.ContainsRune(`_~.-!$&'()*+,;=/?#@%`, r)
 }
 
+// IsIRIChar reports whether r may appear in an IRIREF.
+//
+//	IRIREF ::= '<' ([^#x00-#x20<>"{}|^`\] | UCHAR)* '>'
+//
+// The excluded delimiters are the ones RFC 3987 leaves out of an IRI, plus the
+// ones that would end the IRIREF or begin an escape.
+//
+// A character is excluded however it is written. A UCHAR is a way of spelling
+// a character, not a way of getting one past the grammar, so a decoded escape
+// is checked against this too — which is what the W3C tests
+// turtle-syntax-bad-uri-escape-01..03 and their TriG twins settle. Nothing is
+// lost by it: none of these characters may stand in an IRI in the first place,
+// and a space in one is written %20.
+func IsIRIChar(r rune) bool {
+	if r <= 0x20 {
+		return false
+	}
+	switch r {
+	case '<', '>', '"', '{', '}', '|', '^', '`', '\\':
+		return false
+	default:
+		return true
+	}
+}
+
 // IsDigit reports whether r is a decimal digit.
 //
 //	[0-9]

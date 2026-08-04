@@ -187,3 +187,45 @@ func TestIsHex(t *testing.T) {
 		})
 	}
 }
+
+// TestIsIRIChar walks the excluded set and the characters either side of the
+// one range the production writes, an IRIREF being defined by what it leaves
+// out rather than by what it admits.
+func TestIsIRIChar(t *testing.T) {
+	tests := []struct {
+		name string
+		r    rune
+		want bool
+	}{
+		{name: "a letter", r: 'a', want: true},
+		{name: "a digit", r: '0', want: true},
+		{name: "a colon", r: ':', want: true},
+		{name: "a solidus", r: '/', want: true},
+		{name: "a percent sign, which is how a space is written", r: '%', want: true},
+		{name: "a non-ascii character", r: 'ü', want: true},
+		{name: "the null character", r: 0x00, want: false},
+		{name: "a tab", r: '\t', want: false},
+		{name: "a line feed", r: '\n', want: false},
+		{name: "a carriage return", r: '\r', want: false},
+		{name: "the last character of the excluded range", r: 0x20, want: false},
+		{name: "the first character after it", r: 0x21, want: true},
+		{name: "a less-than sign", r: '<', want: false},
+		{name: "a greater-than sign", r: '>', want: false},
+		{name: "a quotation mark", r: '"', want: false},
+		{name: "a left brace", r: '{', want: false},
+		{name: "a right brace", r: '}', want: false},
+		{name: "a vertical line", r: '|', want: false},
+		{name: "a circumflex accent", r: '^', want: false},
+		{name: "a grave accent", r: '`', want: false},
+		{name: "a reverse solidus", r: '\\', want: false},
+		{name: "the delete character, which the production admits", r: 0x7F, want: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := lex.IsIRIChar(test.r); got != test.want {
+				t.Errorf("IsIRIChar(%q) = %t, want %t", test.r, got, test.want)
+			}
+		})
+	}
+}

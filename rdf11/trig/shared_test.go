@@ -287,7 +287,7 @@ func TestEncodeLocalNames(t *testing.T) {
 		want  string
 	}{
 		{name: "a combining mark may not begin a local name", value: "http://e/̀x", want: "<http://e/̀x>"},
-		{name: "a character PN_CHARS has no room for", value: "http://e/a b", want: `<http://e/a\u0020b>`},
+		{name: "a character PN_CHARS has no room for", value: "http://e/a[b", want: "<http://e/a[b>"},
 		{name: "a digit may begin one", value: "http://e/0a", want: "ex:0a"},
 		{name: "a dot inside one", value: "http://e/a.b", want: "ex:a.b"},
 		{name: "a dot at the end of one", value: "http://e/a.", want: `ex:a\.`},

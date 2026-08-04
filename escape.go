@@ -2,8 +2,6 @@ package rdf
 
 import "strings"
 
-const hexDigits = "0123456789ABCDEF"
-
 // escapeString writes s to b escaped for the N-Triples STRING_LITERAL_QUOTE
 // production.
 //
@@ -32,28 +30,5 @@ func escapeString(b *strings.Builder, s string) {
 		default:
 			b.WriteByte(c)
 		}
-	}
-}
-
-// escapeIRI writes s to b escaped for the N-Triples IRIREF production.
-//
-// The production excludes the ASCII control range, the space, and a handful of
-// delimiters, none of which have an ECHAR form inside an IRI, so each is
-// written as a UCHAR:
-//
-//	IRIREF ::= '<' ([^#x00-#x20<>"{}|^`\] | UCHAR)* '>'
-//
-// As in [escapeString], byte iteration is safe because every excluded
-// character is ASCII.
-func escapeIRI(b *strings.Builder, s string) {
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c <= 0x20 || strings.IndexByte(`<>"{}|^`+"`"+`\`, c) >= 0 {
-			b.WriteString(`\u00`)
-			b.WriteByte(hexDigits[c>>4])
-			b.WriteByte(hexDigits[c&0x0F])
-			continue
-		}
-		b.WriteByte(c)
 	}
 }

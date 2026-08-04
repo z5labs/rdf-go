@@ -115,6 +115,42 @@ func TestTripleValidate(t *testing.T) {
 			triple: rdf.Triple{},
 			want:   rdf.ErrInvalidSubject,
 		},
+		{
+			name: "a subject no syntax can write is rejected",
+			triple: rdf.Triple{
+				Subject:   rdf.IRI("http://example.com/a b"),
+				Predicate: "http://example.com/p",
+				Object:    rdf.IRI("http://example.com/o"),
+			},
+			want: rdf.ErrInvalidIRI,
+		},
+		{
+			name: "a predicate no syntax can write is rejected",
+			triple: rdf.Triple{
+				Subject:   rdf.IRI("http://example.com/s"),
+				Predicate: "http://example.com/a<b",
+				Object:    rdf.IRI("http://example.com/o"),
+			},
+			want: rdf.ErrInvalidIRI,
+		},
+		{
+			name: "an object no syntax can write is rejected",
+			triple: rdf.Triple{
+				Subject:   rdf.IRI("http://example.com/s"),
+				Predicate: "http://example.com/p",
+				Object:    rdf.IRI("http://example.com/a>b"),
+			},
+			want: rdf.ErrInvalidIRI,
+		},
+		{
+			name: "a literal datatype no syntax can write is rejected",
+			triple: rdf.Triple{
+				Subject:   rdf.IRI("http://example.com/s"),
+				Predicate: "http://example.com/p",
+				Object:    mustTypedLiteral(t, "o", "http://example.com/d|t"),
+			},
+			want: rdf.ErrInvalidIRI,
+		},
 	}
 
 	for _, test := range tests {

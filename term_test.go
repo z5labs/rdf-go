@@ -1,6 +1,8 @@
 package rdf_test
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	rdf "github.com/z5labs/rdf-go"
@@ -28,20 +30,19 @@ func TestIRIString(t *testing.T) {
 			want: "<http://example.com/ünïcødé>",
 		},
 		{
-			name: "space is escaped",
+			name: "a percent escape is not a backslash escape and passes through",
+			iri:  "http://example.com/a%20b",
+			want: "<http://example.com/a%20b>",
+		},
+		{
+			// The value has no IRIREF at all, so String has none to write.
+			// Escaping it would only produce something that looks like one:
+			// IRIREF excludes a space however it is written, and the
+			// tokenizers refuse a UCHAR naming a space exactly where they
+			// refuse the space itself.
+			name: "a character no IRIREF admits is written as it stands, not escaped",
 			iri:  "http://example.com/a b",
-			want: "<http://example.com/a\\u0020b>",
-		},
-		{
-			name: "delimiters excluded by IRIREF are escaped",
-			iri:  "http://example.com/<>\"{}|^`\\",
-			want: "<http://example.com/" +
-				"\\u003C\\u003E\\u0022\\u007B\\u007D\\u007C\\u005E\\u0060\\u005C>",
-		},
-		{
-			name: "control characters are escaped",
-			iri:  "http://example.com/\n\t\x00",
-			want: "<http://example.com/\\u000A\\u0009\\u0000>",
+			want: "<http://example.com/a b>",
 		},
 	}
 
@@ -51,6 +52,81 @@ func TestIRIString(t *testing.T) {
 				t.Errorf("String() = %s, want %s", got, test.want)
 			}
 		})
+	}
+}
+
+// TestIRIValidate covers the decision that an IRI holding a character IRIREF
+// excludes is refused rather than escaped: there is no escape that would help,
+// so the value is stopped before a printer is asked to write it.
+func TestIRIValidate(t *testing.T) {
+	tests := []struct {
+		name string
+		iri  rdf.IRI
+		ok   bool
+	}{
+		{name: "an absolute iri", iri: "http://example.com/a", ok: true},
+		{name: "the empty iri", iri: "", ok: true},
+		{name: "a relative reference", iri: "../a", ok: true},
+		{name: "non-ascii", iri: "http://example.com/ünïcødé", ok: true},
+		{name: "a percent escape", iri: "http://example.com/a%20b", ok: true},
+		{name: "a space", iri: "http://example.com/a b"},
+		{name: "a less-than sign", iri: "http://example.com/a<b"},
+		{name: "a greater-than sign", iri: "http://example.com/a>b"},
+		{name: "a quotation mark", iri: "http://example.com/a\"b"},
+		{name: "a left brace", iri: "http://example.com/a{b"},
+		{name: "a right brace", iri: "http://example.com/a}b"},
+		{name: "a vertical line", iri: "http://example.com/a|b"},
+		{name: "a circumflex", iri: "http://example.com/a^b"},
+		{name: "a grave accent", iri: "http://example.com/a`b"},
+		{name: "a backslash", iri: "http://example.com/a\\b"},
+		{name: "a line feed", iri: "http://example.com/a\nb"},
+		{name: "a tab", iri: "http://example.com/a\tb"},
+		{name: "a null", iri: "http://example.com/a\x00b"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.iri.Validate()
+			switch {
+			case test.ok && err != nil:
+				t.Errorf("Validate() = %v, want nil", err)
+			case !test.ok && !errors.Is(err, rdf.ErrInvalidIRI):
+				t.Errorf("Validate() = %v, want %v", err, rdf.ErrInvalidIRI)
+			}
+		})
+	}
+}
+
+// TestIRIValidateReportsTheCharacter covers the error naming what has to be
+// rewritten, a caller with a rejected IRI otherwise having only the whole
+// string to look through.
+func TestIRIValidateReportsTheCharacter(t *testing.T) {
+	err := rdf.IRI("http://example.com/a b").Validate()
+	if err == nil {
+		t.Fatal("Validate() = nil, want an error")
+	}
+	if !strings.Contains(err.Error(), `' '`) {
+		t.Errorf("Validate() = %q, want it to name the offending character", err)
+	}
+}
+
+// TestIRIValidateAcceptsEveryCharacterAnIRIMayHold checks the predicate
+// against the production directly, rather than against the handful of
+// characters the table above spells out.
+//
+//	IRIREF ::= '<' ([^#x00-#x20<>"{}|^`\] | UCHAR)* '>'
+func TestIRIValidateAcceptsEveryCharacterAnIRIMayHold(t *testing.T) {
+	const excluded = "<>\"{}|^`\\"
+
+	for c := 0x21; c < 0x80; c++ {
+		if strings.ContainsRune(excluded, rune(c)) {
+			continue
+		}
+
+		iri := rdf.IRI("http://example.com/" + string(rune(c)))
+		if err := iri.Validate(); err != nil {
+			t.Errorf("Validate() = %v for %q, want nil", err, rune(c))
+		}
 	}
 }
 

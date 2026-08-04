@@ -669,3 +669,58 @@ func TestErrorMessages(t *testing.T) {
 		})
 	}
 }
+
+// TestTokenizeRejectsAnEscapedIRICharacter covers what the W3C tests
+// turtle-syntax-bad-uri-escape-01..03 and their TriG twins settle: a UCHAR
+// spells a character rather than exempting one, so the characters IRIREF
+// leaves out are left out however they are written.
+//
+//	IRIREF ::= '<' ([^#x00-#x20<>"{}|^`\] | UCHAR)* '>'
+//
+// The position is the backslash rather than the character it named, that being
+// what has to be rewritten — a space in an IRI is written %20.
+func TestTokenizeRejectsAnEscapedIRICharacter(t *testing.T) {
+	testCases := []struct {
+		name string
+		src  string
+		r    rune
+	}{
+		{name: "a space", src: `<http://e/a\u0020b>`, r: ' '},
+		{name: "a less-than sign", src: `<http://e/a\u003Cb>`, r: '<'},
+		{name: "a greater-than sign", src: `<http://e/a\u003Eb>`, r: '>'},
+		{name: "a backslash", src: `<http://e/a\u005Cb>`, r: '\\'},
+		{name: "a vertical line", src: `<http://e/a\u007Cb>`, r: '|'},
+		{name: "the null character", src: `<http://e/a\u0000b>`, r: 0},
+		{name: "a tab written with the eight digit form", src: `<http://e/a\U00000009b>`, r: '\t'},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := collect(trig.Tokenize(strings.NewReader(tc.src)))
+
+			// Column 12 is the backslash: the '<' is column 1 and
+			// "http://e/a" is the ten characters after it.
+			want := trig.EscapedIRICharacterError{
+				Pos: trig.Pos{Line: 1, Column: 12},
+				R:   tc.r,
+			}
+			if err != want {
+				t.Errorf("Tokenize() error = %v, want %v", err, want)
+			}
+		})
+	}
+}
+
+// TestTokenizeAcceptsAnEscapedCharacterAnIRIMayHold keeps the guard from
+// growing into a ban on UCHARs: an escape naming a character the production
+// admits is still decoded, and the token carries the character rather than the
+// escape.
+func TestTokenizeAcceptsAnEscapedCharacterAnIRIMayHold(t *testing.T) {
+	tokens, err := collect(trig.Tokenize(strings.NewReader(`<http://e/a\u0062c>`)))
+	if err != nil {
+		t.Fatalf("Tokenize() error = %v, want nil", err)
+	}
+	if len(tokens) != 1 || string(tokens[0].Value) != "http://e/abc" {
+		t.Errorf("Tokenize() = %v, want the iri http://e/abc", tokens)
+	}
+}
