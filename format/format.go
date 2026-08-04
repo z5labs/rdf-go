@@ -25,7 +25,7 @@ import (
 // was asked for, so test with [errors.Is] rather than ==.
 var (
 	// ErrUnknownMediaType is reported when no registered format claims a media
-	// type. The media type parsed; nothing here reads it.
+	// type. The media type is well formed; nothing here reads it.
 	ErrUnknownMediaType = errors.New("format: unknown media type")
 
 	// ErrUnknownExtension is reported when no registered format claims a file
