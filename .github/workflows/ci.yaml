@@ -72,6 +72,71 @@ jobs:
       - name: Run the W3C conformance suites
         run: go test -race -count=1 ./testsuite/...
 
+  # Each format package has a FuzzParse target, run here for a fixed minute so
+  # that a pull request is fuzzed without its wall clock depending on how long
+  # a fuzzer feels like running. A minute of a fresh corpus is not a proof of
+  # anything; it is the amount of it that fits in a pull request, and the seed
+  # corpus each target builds from the vendored W3C suites is what makes that
+  # minute start somewhere other than the first byte of the grammar.
+  #
+  # The eight are a matrix rather than a loop so that they run at once and a
+  # failure names the package that failed, and `fail-fast: false` because a
+  # crasher in one parser says nothing about the other seven, which are worth
+  # finding in the same run.
+  #
+  # The seed corpus alone runs in the `build and test` job above, `go test`
+  # without `-fuzz` running every seed as an ordinary subtest.
+  fuzz:
+    name: fuzz ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: rdf11/ntriples
+            id: rdf11-ntriples
+          - package: rdf11/nquads
+            id: rdf11-nquads
+          - package: rdf11/turtle
+            id: rdf11-turtle
+          - package: rdf11/trig
+            id: rdf11-trig
+          - package: rdf12/ntriples
+            id: rdf12-ntriples
+          - package: rdf12/nquads
+            id: rdf12-nquads
+          - package: rdf12/turtle
+            id: rdf12-turtle
+          - package: rdf12/trig
+            id: rdf12-trig
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      # -run=FuzzParse keeps the package's other tests out of the run: they
+      # pass in the job above, and repeating them here would spend the minute
+      # on them rather than on fuzzing.
+      - name: Fuzz ${{ matrix.package }}
+        run: go test -run=FuzzParse -fuzz=FuzzParse -fuzztime=60s ./${{ matrix.package }}
+
+      # A crasher is a file the fuzzer wrote under the package's
+      # testdata/fuzz, and committing it is what turns it into a regression
+      # test — `go test` replays testdata/fuzz whether or not it is fuzzing.
+      # The runner is thrown away, so the file is uploaded for someone to
+      # commit rather than left there to be lost with the job.
+      - name: Upload the crashers
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-crashers-${{ matrix.id }}
+          path: ${{ matrix.package }}/testdata/fuzz
+          if-no-files-found: ignore
+
   staticcheck:
     name: staticcheck
     runs-on: ubuntu-latest
