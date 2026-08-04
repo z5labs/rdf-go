@@ -209,6 +209,23 @@ func (e InvalidCodePointError) Error() string {
 	return fmt.Sprintf("escape names no character, U+%04X, at line %d, column %d", e.Code, e.Pos.Line, e.Pos.Column)
 }
 
+// EscapedIRICharacterError is reported when a UCHAR inside an IRIREF names a
+// character the production excludes — a space, a '<', a '>'. An escape is a
+// way of spelling a character, not a way of getting one past the grammar, so
+// \u0020 is refused exactly where a space is.
+//
+// Pos is the position of the backslash that began the escape, which is what
+// has to be rewritten: a space in an IRI is written %20.
+type EscapedIRICharacterError struct {
+	Pos Pos
+	R   rune
+}
+
+// Error implements the [error] interface.
+func (e EscapedIRICharacterError) Error() string {
+	return fmt.Sprintf("escape names %q, which an IRI may not hold, at line %d, column %d", e.R, e.Pos.Line, e.Pos.Column)
+}
+
 // Tokenize reads the N-Triples document in r and yields its tokens in order.
 //
 // Iteration stops at the end of the input, and at the first error — an error
@@ -664,28 +681,19 @@ func tokenizeIRIRef(pos Pos) tokenizerAction {
 				if err != nil {
 					return yieldErrorOr(err, nil)
 				}
+				if !lex.IsIRIChar(decoded) {
+					// A UCHAR spells a character; it does not exempt one. The
+					// characters IRIREF leaves out are left out however they
+					// are written.
+					return yieldErrorOr(EscapedIRICharacterError{Pos: charPos, R: decoded}, nil)
+				}
 				iri.WriteRune(decoded)
-			case !isIRIChar(r):
+			case !lex.IsIRIChar(r):
 				return yieldErrorOr(UnexpectedCharacterError{Pos: charPos, R: r}, nil)
 			default:
 				iri.WriteRune(r)
 			}
 		}
-	}
-}
-
-// isIRIChar reports whether r may appear directly in an IRIREF. The excluded
-// delimiters are those RFC 3987 leaves out of an IRI, plus the ones that would
-// end the IRIREF or begin an escape.
-func isIRIChar(r rune) bool {
-	if r <= 0x20 {
-		return false
-	}
-	switch r {
-	case '<', '>', '"', '{', '}', '|', '^', '`', '\\':
-		return false
-	default:
-		return true
 	}
 }
 

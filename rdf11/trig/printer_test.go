@@ -395,7 +395,10 @@ func TestEncodeRoundTrip(t *testing.T) {
 		"<http://e/g> { <http://e/s> <http://e/p> \"a\\\"b\", \"\"\"line\nbreak\"\"\", \"tab\\there\" . }",
 		`<http://e/g> { <http://e/s> <http://e/p> "v"@en, "v"@en-GB, "1"^^<http://e/dt> . }`,
 		"@prefix ex: <http://e/> .\nex:g { ex:a.b ex:p ex:\\-c, ex:d\\., ex:e%20f, ex:_g_ . }",
-		`<http://e/g> { <http://e/s> <http://e/p> <http://e/a\u0020b>, <http://e/c\u0009d> . }`,
+		// The local parts here are ones PN_LOCAL has no room for and
+		// PN_LOCAL_ESC cannot rescue, so both have to come back as an IRIREF
+		// written out in full.
+		"<http://e/g> { <http://e/s> <http://e/p> <http://e/a[b>, <http://e/c]d> . }",
 		"@prefix ex: <http://e/> .\n" +
 			"ex:g { ex:subject ex:predicate ex:objectOne, ex:objectTwo, ex:objectThree, ex:objectFour . }",
 	}

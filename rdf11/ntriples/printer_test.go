@@ -654,6 +654,29 @@ func TestEncodeErrors(t *testing.T) {
 		}
 	})
 
+	t.Run("an iri no syntax can write", func(t *testing.T) {
+		// This is the other half of the tokenizers refusing a UCHAR that names
+		// a character IRIREF excludes. Escaping the space would only produce
+		// something that looks like an IRIREF: the production leaves the
+		// character out however it is written, so the document would not read
+		// back. The value is refused instead, and %20 is how a space travels
+		// in an IRI.
+		invalid := rdf.Triple{
+			Subject:   rdf.IRI("http://example.com/a b"),
+			Predicate: "http://example.com/p",
+			Object:    rdf.IRI("http://example.com/o"),
+		}
+
+		var b strings.Builder
+		err := ntriples.Encode(&b, slices.Values([]rdf.Triple{invalid}))
+		if !errors.Is(err, rdf.ErrInvalidIRI) {
+			t.Errorf("Encode() = %v, want %v", err, rdf.ErrInvalidIRI)
+		}
+		if b.String() != "" {
+			t.Errorf("Encode() wrote %q, want nothing", b.String())
+		}
+	})
+
 	t.Run("a triple term object", func(t *testing.T) {
 		// The shared term types model RDF 1.2, so a triple term reaches this
 		// package's Encode even though its own parser can never produce one.

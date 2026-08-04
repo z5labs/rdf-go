@@ -500,7 +500,10 @@ func TestEncodeRoundTrip(t *testing.T) {
 		"<http://e/s> <http://e/p> \"a\\\"b\", \"\"\"line\nbreak\"\"\", \"tab\\there\" .",
 		`<http://e/s> <http://e/p> "v"@en, "v"@en-GB, "1"^^<http://e/dt> .`,
 		"@prefix ex: <http://e/> .\nex:a.b ex:p ex:\\-c, ex:d\\., ex:e%20f, ex:_g_ .",
-		"<http://e/s> <http://e/p> <http://e/a\\u0020b>, <http://e/c\\u0009d> .",
+		// The local parts here are ones PN_LOCAL has no room for and
+		// PN_LOCAL_ESC cannot rescue, so both have to come back as an IRIREF
+		// written out in full.
+		"<http://e/s> <http://e/p> <http://e/a[b>, <http://e/c]d> .",
 		"@version \"1.2\" .\n<http://e/s> <http://e/p> <http://e/o> .",
 
 		// The RDF 1.2 constructs, every blank node inside a triple term named.

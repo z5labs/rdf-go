@@ -64,9 +64,13 @@ func (q Quad) String() string {
 // default graph and is accepted here; [Dataset.AddGraph], which names a graph
 // rather than referring to one, rejects it.
 func validateGraphName(name Term) error {
-	switch name.(type) {
-	case nil, IRI, BlankNode:
+	switch n := name.(type) {
+	case nil, BlankNode:
 		return nil
+	case IRI:
+		// A graph label is written as an IRIREF like any other IRI, so one
+		// that cannot be written stops the quad here.
+		return n.Validate()
 	default:
 		return fmt.Errorf("%w: got %s", ErrInvalidGraphName, describeTerm(name))
 	}

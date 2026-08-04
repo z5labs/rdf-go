@@ -228,9 +228,14 @@ func TestPrintEscapes(t *testing.T) {
 			want: "<http://e/s> <http://e/p> \"a\tb\" .\n",
 		},
 		{
-			name: "a character an iri may not hold is escaped",
-			src:  `<http://e/s> <http://e/p> <http://e/a\u0020b> .`,
-			want: `<http://e/s> <http://e/p> <http://e/a\u0020b> .` + "\n",
+			// A character an IRI may not hold has no escaped form either — the
+			// production excludes it however it is written — so a document
+			// carrying one is refused by Parse and never reaches Print; see
+			// TestTokenizeRejectsAnEscapedIRICharacter. A space in an IRI is
+			// written %20, and that is written back as itself.
+			name: "a percent escape in an iri is written as it stands",
+			src:  `<http://e/s> <http://e/p> <http://e/a%20b> .`,
+			want: `<http://e/s> <http://e/p> <http://e/a%20b> .` + "\n",
 		},
 		{
 			name: "a local name keeps the dots it may hold",
@@ -475,8 +480,8 @@ func TestEncode(t *testing.T) {
 		},
 		{
 			name:     "a local part no PN_LOCAL can hold falls back to the full iri",
-			ntriples: `<http://e/s> <http://e/p> <http://e/a\u0020b> .`,
-			want:     "@prefix ex: <http://e/> .\nex:s ex:p <http://e/a\\u0020b> .\n",
+			ntriples: "<http://e/s> <http://e/p> <http://e/a[b> .",
+			want:     "@prefix ex: <http://e/> .\nex:s ex:p <http://e/a[b> .\n",
 		},
 		{
 			name:     "rdf:type is written a",
@@ -636,7 +641,10 @@ func TestEncodeRoundTrip(t *testing.T) {
 		"<http://e/s> <http://e/p> \"a\\\"b\", \"\"\"line\nbreak\"\"\", \"tab\\there\" .",
 		`<http://e/s> <http://e/p> "v"@en, "v"@en-GB, "1"^^<http://e/dt> .`,
 		"@prefix ex: <http://e/> .\nex:a.b ex:p ex:\\-c, ex:d\\., ex:e%20f, ex:_g_ .",
-		`<http://e/s> <http://e/p> <http://e/a\u0020b>, <http://e/c\u0009d> .`,
+		// The local parts here are ones PN_LOCAL has no room for and
+		// PN_LOCAL_ESC cannot rescue, so both have to come back as an IRIREF
+		// written out in full.
+		"<http://e/s> <http://e/p> <http://e/a[b>, <http://e/c]d> .",
 		"@prefix ex: <http://e/> .\nex:subject ex:predicate ex:objectOne, ex:objectTwo, ex:objectThree, ex:objectFour .",
 	}
 

@@ -20,6 +20,11 @@ var (
 
 	// ErrInvalidObject is reported when a statement has no object.
 	ErrInvalidObject = errors.New("rdf: object must not be nil")
+
+	// ErrInvalidIRI is reported when an IRI holds a character the IRIREF
+	// production excludes, and so has no form any RDF syntax can write. See
+	// [IRI.Validate].
+	ErrInvalidIRI = errors.New("rdf: IRI holds a character no RDF syntax can write")
 )
 
 // Triple is an RDF statement: a subject, a predicate and an object.
@@ -53,12 +58,18 @@ type Triple struct {
 // [ErrInvalidPredicate] or [ErrInvalidObject] wrapped with the offending
 // value.
 //
+// Every IRI the statement carries — the subject, the predicate, the object,
+// and a literal object's datatype — is checked by [IRI.Validate] as well, so a
+// statement holding an IRI no RDF syntax can write is refused here rather than
+// written out as a document nothing can read back. That check is why
+// [ErrInvalidIRI] can come out of a statement-level Validate.
+//
 // An object that is a [TripleTerm] is validated in turn, so a triple term
 // nested anywhere in the object is checked to the bottom.
 //
-// Only the constraints of the data model are checked. A predicate that is
-// non-empty but not an absolute IRI passes, because deciding that is the job
-// of the iri package and of the parsers that read concrete syntax.
+// Nothing further is checked. A predicate that is non-empty but not an
+// absolute IRI passes, because deciding that is the job of the iri package and
+// of the parsers that read concrete syntax.
 func (t Triple) Validate() error {
 	return validateStatement(t.Subject, t.Predicate, t.Object)
 }
@@ -82,10 +93,34 @@ func validateStatement(subject Term, predicate IRI, object Term) error {
 	if object == nil {
 		return ErrInvalidObject
 	}
+	if err := validateIRIs(subject); err != nil {
+		return err
+	}
+	if err := predicate.Validate(); err != nil {
+		return err
+	}
 	if nested, ok := object.(TripleTerm); ok {
 		return nested.Validate()
 	}
-	return nil
+	return validateIRIs(object)
+}
+
+// validateIRIs checks the IRIs a term carries, which is the term itself for an
+// [IRI] and the datatype for a [Literal]. A [BlankNode] carries none, and a
+// [TripleTerm] is validated as a statement rather than here.
+//
+// This is what keeps a statement that cannot be written from reaching a
+// printer: an IRI holding a character IRIREF excludes has no rendering, and a
+// literal's datatype is written as an IRIREF like any other IRI.
+func validateIRIs(t Term) error {
+	switch term := t.(type) {
+	case IRI:
+		return term.Validate()
+	case Literal:
+		return term.Datatype().Validate()
+	default:
+		return nil
+	}
 }
 
 // Equal reports whether t and other are the same RDF statement, comparing each

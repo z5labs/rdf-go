@@ -467,9 +467,14 @@ func TestPrintEscapesCanonically(t *testing.T) {
 			want: "<http://example.com/a> <http://e/p> \"v\" .\n",
 		},
 		{
-			name: "an iri character the production excludes stays a UCHAR, in uppercase hex",
-			src:  "<http://example.com/a\\u007Cb> <http://e/p> \"v\" .",
-			want: `<http://example.com/a\u007Cb> <http://e/p> "v" .` + "\n",
+			// A character the production excludes has no UCHAR form either:
+			// IRIREF leaves it out however it is written, so a document
+			// carrying one is refused by Parse rather than printed back. What
+			// remains to check is that a percent escape, which is how such a
+			// character is carried in an IRI, is written as it stands.
+			name: "a percent escape in an iri is written as it stands",
+			src:  `<http://example.com/a%7Cb> <http://e/p> "v" .`,
+			want: `<http://example.com/a%7Cb> <http://e/p> "v" .` + "\n",
 		},
 	}
 
