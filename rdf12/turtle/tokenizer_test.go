@@ -426,6 +426,122 @@ func TestTokenizeVersionDirective(t *testing.T) {
 	}
 }
 
+// TestTokenizeVersionSpecifier covers the one place Turtle asks for a string
+// and admits only two of the four forms it writes strings in.
+//
+//	VersionSpecifier ::= STRING_LITERAL_QUOTE | STRING_LITERAL_SINGLE_QUOTE
+//
+// A long string is a string everywhere else and is not a version specifier, so
+// the third quote — the character the directive may not write — is where it is
+// reported.
+func TestTokenizeVersionSpecifier(t *testing.T) {
+	t.Run("the short forms are read as strings", func(t *testing.T) {
+		testCases := []struct {
+			name     string
+			src      string
+			expected []turtle.Token
+		}{
+			{
+				name: "an empty specifier is two quotes and no third",
+				src:  `VERSION ""`,
+				expected: []turtle.Token{
+					tok(1, 1, turtle.TokenVersion, "VERSION"),
+					tok(1, 9, turtle.TokenString, ""),
+				},
+			},
+			{
+				name: "a specifier holding an escape is decoded",
+				src:  `VERSION "1.2"`,
+				expected: []turtle.Token{
+					tok(1, 1, turtle.TokenVersion, "VERSION"),
+					tok(1, 9, turtle.TokenString, "1.2"),
+				},
+			},
+			{
+				name: "a comment may stand between the keyword and the specifier",
+				src:  "@version # which version\n \"1.2\" .",
+				expected: []turtle.Token{
+					tok(1, 1, turtle.TokenVersion, "@version"),
+					tok(1, 10, turtle.TokenComment, "# which version"),
+					tok(2, 2, turtle.TokenString, "1.2"),
+					tok(2, 8, turtle.TokenDot, "."),
+				},
+			},
+			{
+				name: "what follows the keyword is only special once",
+				src:  `VERSION "1.2" :s :p """long""" .`,
+				expected: []turtle.Token{
+					tok(1, 1, turtle.TokenVersion, "VERSION"),
+					tok(1, 9, turtle.TokenString, "1.2"),
+					tok(1, 15, turtle.TokenPNameLN, ":s"),
+					tok(1, 18, turtle.TokenPNameLN, ":p"),
+					tok(1, 21, turtle.TokenString, "long"),
+					tok(1, 32, turtle.TokenDot, "."),
+				},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				run(t, tc.src, tc.expected)
+			})
+		}
+	})
+
+	t.Run("the long forms are refused at the third quote", func(t *testing.T) {
+		testCases := []struct {
+			name        string
+			src         string
+			expectedErr error
+		}{
+			{
+				name:        "the sparql keyword with a long double quoted specifier",
+				src:         `VERSION """1.2"""`,
+				expectedErr: turtle.UnexpectedCharacterError{Pos: turtle.Pos{Line: 1, Column: 11}, R: '"'},
+			},
+			{
+				name:        "the sparql keyword with a long single quoted specifier",
+				src:         `VERSION '''1.2'''`,
+				expectedErr: turtle.UnexpectedCharacterError{Pos: turtle.Pos{Line: 1, Column: 11}, R: '\''},
+			},
+			{
+				name:        "the at directive with a long double quoted specifier",
+				src:         `@version """1.2""" .`,
+				expectedErr: turtle.UnexpectedCharacterError{Pos: turtle.Pos{Line: 1, Column: 12}, R: '"'},
+			},
+			{
+				name:        "the at directive with a long single quoted specifier",
+				src:         `@version '''1.2''' .`,
+				expectedErr: turtle.UnexpectedCharacterError{Pos: turtle.Pos{Line: 1, Column: 12}, R: '\''},
+			},
+			{
+				name:        "a comment does not excuse a long specifier",
+				src:         "VERSION # note\n\"\"\"1.2\"\"\"",
+				expectedErr: turtle.UnexpectedCharacterError{Pos: turtle.Pos{Line: 2, Column: 3}, R: '"'},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := collect(turtle.Tokenize(strings.NewReader(tc.src)))
+				if err != tc.expectedErr {
+					t.Errorf("Tokenize() error = %v, want %v", err, tc.expectedErr)
+				}
+			})
+		}
+	})
+
+	t.Run("anything else is left to the parser", func(t *testing.T) {
+		// The keyword and the number are both tokens the tokenizer has no
+		// quarrel with; that a number is no version specifier is the parser's
+		// to say, and it can name the token rather than the character.
+		run(t, `VERSION 1.2`, []turtle.Token{
+			tok(1, 1, turtle.TokenVersion, "VERSION"),
+			tok(1, 9, turtle.TokenDecimal, "1.2"),
+		})
+	})
+}
+
 // TestTokenizeLangDir covers LANG_DIR, which is the RDF 1.1 LANGTAG plus an
 // initial base direction after a second hyphen.
 //
@@ -535,6 +651,11 @@ func TestTokenizeRDF12Errors(t *testing.T) {
 			name:        "a bar followed by something other than a brace",
 			src:         `|x`,
 			expectedErr: turtle.UnexpectedCharacterError{Pos: turtle.Pos{Line: 1, Column: 2}, R: 'x'},
+		},
+		{
+			name:        "a base direction with no language tag",
+			src:         `"x"@--ltr`,
+			expectedErr: turtle.UnexpectedCharacterError{Pos: turtle.Pos{Line: 1, Column: 5}, R: '-'},
 		},
 		{
 			name:        "a base direction with no letters",

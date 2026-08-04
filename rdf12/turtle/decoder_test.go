@@ -187,6 +187,16 @@ func TestDecodeRDF12(t *testing.T) {
 			want: `<http://example.com/s> <http://example.com/p> "o"@ar--rtl .`,
 		},
 		{
+			name: "a left to right directional literal",
+			src:  `:s :p "text"@en--ltr .`,
+			want: `<http://example.com/s> <http://example.com/p> "text"@en--ltr .`,
+		},
+		{
+			name: "a version directive announces and says nothing",
+			src:  "VERSION \"1.2\"\n:s :p :o .",
+			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o> .`,
+		},
+		{
 			name: "an annotation block asserts the triple and describes it",
 			src:  `:s :p :o {| :q :v |} .`,
 			want: `<http://example.com/s> <http://example.com/p> <http://example.com/o> .` + "\n" +
@@ -303,6 +313,108 @@ func TestDecodeRDF12(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := decodeTurtle(t, prefixed+tc.src)
 			want := decodeNTriples(t, tc.want)
+
+			if len(got) != len(want) {
+				t.Fatalf("Decode() yielded %d triples, want %d:\n%s", len(got), len(want), formatTriples(got))
+			}
+			if !rdf.Isomorphic(graphOfTriples(t, got), graphOfTriples(t, want)) {
+				t.Errorf("Decode() gave a graph that is not the one wanted:\ngot:\n%swant:\n%s",
+					formatTriples(got), formatTriples(want))
+			}
+		})
+	}
+}
+
+// TestDecodeDirectionalLiteral covers the literal RDF 1.2 adds: a
+// language-tagged string carrying the base direction its text is meant to be
+// read in.
+//
+//	RDFLiteral ::= String (LANG_DIR | '^^' iri)?
+//	LANG_DIR   ::= '@' [a-zA-Z]+ ('-' [a-zA-Z0-9]+)* ('--' [a-zA-Z]+)?
+//
+// The direction implies the datatype rdf:dirLangString, as a language tag on
+// its own implies rdf:langString, and the tag is kept alongside it: a
+// directional literal is a language-tagged literal that says one thing more.
+func TestDecodeDirectionalLiteral(t *testing.T) {
+	testCases := []struct {
+		name      string
+		src       string
+		language  string
+		direction rdf.Direction
+	}{
+		{
+			name:      "left to right",
+			src:       `:s :p "text"@en--ltr .`,
+			language:  "en",
+			direction: rdf.DirectionLTR,
+		},
+		{
+			name:      "right to left",
+			src:       `:s :p "text"@ar--rtl .`,
+			language:  "ar",
+			direction: rdf.DirectionRTL,
+		},
+		{
+			name:      "a tag with subtags carries a direction too",
+			src:       `:s :p "text"@en-GB--ltr .`,
+			language:  "en-GB",
+			direction: rdf.DirectionLTR,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			triples := decodeTurtle(t, prefixed+tc.src)
+			if len(triples) != 1 {
+				t.Fatalf("Decode() yielded %d triples, want 1", len(triples))
+			}
+
+			literal, ok := triples[0].Object.(rdf.Literal)
+			if !ok {
+				t.Fatalf("object is %T, want rdf.Literal", triples[0].Object)
+			}
+			if got := literal.Datatype(); got != vocab.RDFDirLangString {
+				t.Errorf("Datatype() = %q, want %q", got, vocab.RDFDirLangString)
+			}
+			if got := literal.Language(); got != tc.language {
+				t.Errorf("Language() = %q, want %q", got, tc.language)
+			}
+			if got := literal.Direction(); got != tc.direction {
+				t.Errorf("Direction() = %q, want %q", got, tc.direction)
+			}
+		})
+	}
+}
+
+// TestDecodeVersionDirective covers the directive being an announcement and
+// nothing more.
+//
+//	version       ::= '@version' VersionSpecifier '.'
+//	sparqlVersion ::= "VERSION" VersionSpecifier
+//
+// The specification calls it a hint and mandates no parser behaviour from it
+// (Turtle §7.1), so a document is read the same whatever it announces and
+// however often it announces it.
+func TestDecodeVersionDirective(t *testing.T) {
+	sources := []string{
+		"VERSION \"1.2\"\n:s :p :o .",
+		"version '1.2-basic'\n:s :p :o .",
+		"@version \"1.2\" .\n:s :p :o .",
+		// A version the document does not write the syntax of, which is a hint
+		// and not a promise.
+		"VERSION \"1.1\"\n:s :p :o .",
+		// One per part of the document, which is what more than one means.
+		"VERSION \"1.2\"\n:s :p :o .\n@version \"1.2\" .",
+		// A comment is white space and may stand between the keyword and the
+		// specifier as readily as anywhere else.
+		"VERSION # the version this document targets\n\"1.2\"\n:s :p :o .",
+	}
+
+	want := decodeNTriples(t, `<http://example.com/s> <http://example.com/p> <http://example.com/o> .`)
+
+	for _, src := range sources {
+		t.Run(src, func(t *testing.T) {
+			got := decodeTurtle(t, prefixed+src)
 
 			if len(got) != len(want) {
 				t.Fatalf("Decode() yielded %d triples, want %d:\n%s", len(got), len(want), formatTriples(got))
@@ -627,6 +739,17 @@ func TestDecodeErrors(t *testing.T) {
 		{
 			name: "a base direction that is neither ltr nor rtl",
 			src:  `<http://example.com/s> <http://example.com/p> "o"@en--up .`,
+		},
+		{
+			// The two directions are written in lower case and only in lower
+			// case: the constraint names the strings "ltr" and "rtl" rather
+			// than matching them however they are capitalized.
+			name: "a base direction in upper case",
+			src:  `<http://example.com/s> <http://example.com/p> "o"@en--LTR .`,
+		},
+		{
+			name: "a base direction with no language tag",
+			src:  `<http://example.com/s> <http://example.com/p> "o"@--ltr .`,
 		},
 		{
 			name: "an undefined prefix in an annotation's reifier",

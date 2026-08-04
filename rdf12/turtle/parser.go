@@ -241,6 +241,13 @@ func parseDocument(p *parser, s sink) (parserAction[sink], error) {
 // parseStatement reads one directive or one set of triples.
 //
 //	statement ::= directive | triples '.'
+//	directive ::= prefixID | base | version | sparqlPrefix | sparqlBase | sparqlVersion
+//
+// The keyword that begins a directive is what tells it from a triple, and none
+// of the three may begin a term, so a directive is read wherever a statement
+// may stand and nowhere else. A version directive written inside a triple — in
+// a collection, an annotation block or a pair of angles — is a token the
+// productions there have no place for, which is where it is refused.
 func parseStatement(p *parser, s sink) (parserAction[sink], error) {
 	tok, err, ok := p.peek()
 	if err != nil {
@@ -256,6 +263,8 @@ func parseStatement(p *parser, s sink) (parserAction[sink], error) {
 		statement, err = parsePrefixDirective(p)
 	case TokenBase:
 		statement, err = parseBaseDirective(p)
+	case TokenVersion:
+		statement, err = parseVersionDirective(p)
 	default:
 		statement, err = parseTriples(p)
 	}
@@ -326,6 +335,45 @@ func parseBaseDirective(p *parser) (*BaseDirective, error) {
 		Pos:     keyword.Pos,
 		Keyword: string(keyword.Value),
 		IRI:     &IRIRef{Pos: iri.Pos, Value: string(iri.Value)},
+	}
+
+	if isAtDirective(keyword) {
+		if _, err := p.expect(TokenDot); err != nil {
+			return nil, err
+		}
+	}
+	return directive, nil
+}
+
+// parseVersionDirective reads a version announcement in either of its forms.
+//
+//	version          ::= '@version' VersionSpecifier '.'
+//	sparqlVersion    ::= "VERSION" VersionSpecifier
+//	VersionSpecifier ::= STRING_LITERAL_QUOTE | STRING_LITERAL_SINGLE_QUOTE
+//
+// As with the other two directives, only the '@' form takes a trailing '.', and
+// the keyword is kept so that a printer can write back the form the author
+// chose.
+//
+// The specifier is a [TokenString] like any other. That it may not be written
+// in either of the two long string forms is settled by the tokenizer, which is
+// the only part of the reader that still knows which of the four a string was
+// written in.
+func parseVersionDirective(p *parser) (*VersionDirective, error) {
+	keyword, err := p.expect(TokenVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	specifier, err := p.expect(TokenString)
+	if err != nil {
+		return nil, err
+	}
+
+	directive := &VersionDirective{
+		Pos:     keyword.Pos,
+		Keyword: string(keyword.Value),
+		Version: string(specifier.Value),
 	}
 
 	if isAtDirective(keyword) {
