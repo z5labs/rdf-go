@@ -45,7 +45,7 @@ func tokenizeDocument(t *tokenizer, yield func(Token, error) bool) tokenizerActi
 		case r == '^':
 			return tokenizeDatatypeMarker(pos)
 		case r == '#':
-			return tokenizeComment(pos)
+			return tokenizeComment(pos, tokenizeDocument)
 		case r == '[':
 			return tokenizeAnonOrOpenBracket(pos)
 		case r == ':' || lex.IsPNCharsBase(r):
@@ -404,7 +404,7 @@ func tokenizeAtKeyword(pos Pos) tokenizerAction {
 		case "base":
 			return yieldFinalToken(err, Token{Pos: pos, Type: TokenBase, Value: []byte("@base")}, tokenizeDocument)
 		case "version":
-			return yieldFinalToken(err, Token{Pos: pos, Type: TokenVersion, Value: []byte("@version")}, tokenizeDocument)
+			return yieldFinalToken(err, Token{Pos: pos, Type: TokenVersion, Value: []byte("@version")}, tokenizeVersionSpecifier)
 		}
 
 		if atEnd {
@@ -581,10 +581,96 @@ func keywordThen(pos Pos, name string, trailing []Pos) tokenizerAction {
 	}
 
 	next := tokenizeDocument
+	if tok.Type == TokenVersion {
+		// What may follow the keyword is narrower than what may follow a
+		// statement, so the specifier gets a rule of its own.
+		next = tokenizeVersionSpecifier
+	}
 	for i := len(trailing) - 1; i >= 0; i-- {
 		next = yieldTokenThen(Token{Pos: trailing[i], Type: TokenDot, Value: []byte(".")}, next)
 	}
 	return yieldTokenThen(tok, next)
+}
+
+// tokenizeVersionSpecifier reads the string a version directive announces, the
+// keyword having been emitted.
+//
+//	version          ::= '@version' VersionSpecifier '.'
+//	sparqlVersion    ::= "VERSION" VersionSpecifier
+//	VersionSpecifier ::= STRING_LITERAL_QUOTE | STRING_LITERAL_SINGLE_QUOTE
+//
+// A version specifier is the one place the grammar asks for a string and admits
+// only two of the four forms Turtle writes one in. Which form a string was
+// written in is not recorded in the token — the four differ in what they can
+// hold, not in what they mean — so the restriction is kept where the string is
+// read, at the one point that knows a version keyword came immediately before
+// it.
+//
+// That restriction is the whole of what this rule adds. A version keyword
+// followed by a number, or by nothing at all, is handed back to
+// [tokenizeDocument] and reported by the parser, which can name the token that
+// arrived where a string was wanted rather than the character that began it.
+//
+// A comment may stand between the keyword and the specifier as readily as
+// anywhere else, being white space to the grammar, so one is read and the
+// search for the specifier resumes after it.
+func tokenizeVersionSpecifier(t *tokenizer, yield func(Token, error) bool) tokenizerAction {
+	return skipSpace(func(t *tokenizer, yield func(Token, error) bool) tokenizerAction {
+		pos := t.pos
+
+		r, ok, err := t.peek()
+		if err != nil {
+			return yieldErrorOr(err, nil)
+		}
+		if !ok || (r != '#' && r != '"' && r != '\'') {
+			return tokenizeDocument
+		}
+		if _, err := t.next(); err != nil {
+			return yieldErrorOr(err, nil)
+		}
+
+		if r == '#' {
+			return tokenizeComment(pos, tokenizeVersionSpecifier)
+		}
+		return tokenizeVersionString(pos, r)
+	})
+}
+
+// tokenizeVersionString reads a version specifier's string, its first quote
+// having been read.
+//
+//	VersionSpecifier            ::= STRING_LITERAL_QUOTE | STRING_LITERAL_SINGLE_QUOTE
+//	STRING_LITERAL_QUOTE        ::= '"' ([^#x22#x5C#xA#xD] | ECHAR | UCHAR)* '"'
+//	STRING_LITERAL_SINGLE_QUOTE ::= "'" ([^#x27#x5C#xA#xD] | ECHAR | UCHAR)* "'"
+//
+// Two quotes and a third is where a long string begins, and a long string is no
+// version specifier: that third quote is the character the directive may not
+// write, so that is where it is reported. Two quotes and no third are the empty
+// string, complete as it stands.
+func tokenizeVersionString(pos Pos, quote rune) tokenizerAction {
+	return func(t *tokenizer, yield func(Token, error) bool) tokenizerAction {
+		second, ok, err := t.peek()
+		if err != nil {
+			return yieldErrorOr(err, nil)
+		}
+		if !ok || second != quote {
+			return tokenizeShortString(pos, quote)
+		}
+		if _, err := t.next(); err != nil {
+			return yieldErrorOr(err, nil)
+		}
+
+		thirdPos := t.pos
+
+		third, ok, err := t.peek()
+		if err != nil {
+			return yieldErrorOr(err, nil)
+		}
+		if ok && third == quote {
+			return yieldErrorOr(UnexpectedCharacterError{Pos: thirdPos, R: third}, nil)
+		}
+		return yieldTokenThen(Token{Pos: pos, Type: TokenString}, tokenizeDocument)
+	}
 }
 
 // tokenizeLocalName reads what follows the ':' of a prefixed name.

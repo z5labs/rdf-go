@@ -42,9 +42,10 @@ type Comment struct {
 }
 
 // Statement is one statement of a document: a [*PrefixDirective], a
-// [*BaseDirective] or a [*Triples].
+// [*BaseDirective], a [*VersionDirective] or a [*Triples].
 //
 //	statement ::= directive | triples '.'
+//	directive ::= prefixID | base | version | sparqlPrefix | sparqlBase | sparqlVersion
 type Statement interface {
 	// Position returns where the statement begins.
 	Position() Pos
@@ -87,6 +88,42 @@ type BaseDirective struct {
 func (d *BaseDirective) Position() Pos { return d.Pos }
 
 func (*BaseDirective) statement() {}
+
+// VersionDirective announces the RDF version a document targets.
+//
+//	version       ::= '@version' VersionSpecifier '.'
+//	sparqlVersion ::= "VERSION" VersionSpecifier
+//
+// It is the directive RDF 1.2 adds to the two RDF 1.1 had, and it is a
+// statement rather than a document header: the grammar admits one wherever a
+// directive may stand, and a document may carry more than one, each announcing
+// the version of the part of the document that follows it (RDF 1.2 Turtle
+// §2.4). So the parser records every directive where it stands and refuses
+// none for its placement.
+type VersionDirective struct {
+	// Pos is the position of the keyword's first character.
+	Pos Pos
+
+	// Keyword is the word as written, which is what tells the two forms apart:
+	// only the '@' form is ended by a '.', and only the SPARQL form may be
+	// spelled in any case. A printer needs it to write back what it read.
+	Keyword string
+
+	// Version is the version specifier's string, without its quotes and with
+	// every escape decoded. Which strings are version labels is settled by RDF
+	// 1.2 Concepts §2.1 rather than by the grammar, and is not checked here.
+	//
+	// The version is recorded rather than acted on. The specification calls the
+	// announcement a hint and mandates no parser behaviour from it (Turtle
+	// §7.1), so a document announcing "1.1" and then writing a triple term is
+	// read here exactly as one announcing "1.2" would be.
+	Version string
+}
+
+// Position returns the position of the keyword.
+func (d *VersionDirective) Position() Pos { return d.Pos }
+
+func (*VersionDirective) statement() {}
 
 // Triples is a subject and the things said about it.
 //
@@ -234,6 +271,7 @@ var (
 
 	_ Statement = (*PrefixDirective)(nil)
 	_ Statement = (*BaseDirective)(nil)
+	_ Statement = (*VersionDirective)(nil)
 	_ Statement = (*Triples)(nil)
 )
 

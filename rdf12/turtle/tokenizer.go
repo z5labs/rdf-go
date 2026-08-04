@@ -877,9 +877,15 @@ func tokenizeDatatypeMarker(pos Pos) tokenizerAction {
 	}
 }
 
-// tokenizeComment reads a comment, the '#' having been consumed. A comment
-// runs to the end of the line, which is left for [tokenizeEOL].
-func tokenizeComment(pos Pos) tokenizerAction {
+// tokenizeComment reads a comment, the '#' having been consumed, and carries on
+// with next. A comment runs to the end of the line, which is left as the white
+// space it is.
+//
+// The successor is a parameter because a comment is white space and so settles
+// nothing: whatever the tokenizer was looking for before the '#' it is still
+// looking for after it. Only [tokenizeVersionSpecifier] has anything else to
+// say here; everywhere else next is [tokenizeDocument].
+func tokenizeComment(pos Pos, next tokenizerAction) tokenizerAction {
 	return func(t *tokenizer, yield func(Token, error) bool) tokenizerAction {
 		comment := bytes.NewBuffer([]byte{'#'})
 
@@ -890,7 +896,7 @@ func tokenizeComment(pos Pos) tokenizerAction {
 		return yieldFinalToken(
 			err,
 			Token{Pos: pos, Type: TokenComment, Value: comment.Bytes()},
-			tokenizeDocument,
+			next,
 		)
 	}
 }

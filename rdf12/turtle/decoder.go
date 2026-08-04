@@ -127,8 +127,10 @@ var errConsumerStopped = errors.New("turtle: consumer stopped")
 // character, a parse error at the token, an [UndefinedPrefixError] at the
 // prefixed name, and an [InvalidTermError] at the term the data model refused.
 //
-// Comments are dropped. A [Document] from [Parse] keeps them, for a caller who
-// wants to write the document back rather than read what it says.
+// Comments and version directives are dropped: neither says anything about the
+// graph, a version announcement being a hint that mandates no parser behaviour
+// (Turtle §7.1). A [Document] from [Parse] keeps both, for a caller who wants
+// to write the document back rather than read what it says.
 func Decode(r io.Reader) iter.Seq2[rdf.Triple, error] {
 	return func(yield func(rdf.Triple, error) bool) {
 		d := &decoder{yield: yield}
@@ -231,6 +233,8 @@ func (l *lowering) statement(s Statement) error {
 		return l.prefixDirective(st)
 	case *BaseDirective:
 		return l.baseDirective(st)
+	case *VersionDirective:
+		return l.versionDirective(st)
 	case *Triples:
 		return l.triples(st)
 	default:
@@ -271,6 +275,21 @@ func (l *lowering) baseDirective(d *BaseDirective) error {
 	l.hasBase = true
 	return nil
 }
+
+// versionDirective drops the announcement, leaving no state behind and no
+// triple.
+//
+//	version       ::= '@version' VersionSpecifier '.'
+//	sparqlVersion ::= "VERSION" VersionSpecifier
+//
+// The specification calls the announcement a hint and mandates no parser
+// behaviour from it (Turtle §7.1), so this package reads the version it is
+// named for whatever a document claims: one announcing "1.1" and then writing a
+// triple term is read exactly as one announcing "1.2" would be.
+//
+// It is a rule of its own rather than an empty case so that the reason is
+// written where a reader of the statement switch looks for it.
+func (l *lowering) versionDirective(*VersionDirective) error { return nil }
 
 // triples lowers a subject and everything said about it.
 //

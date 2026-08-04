@@ -912,6 +912,143 @@ func TestParseRDF11Constructs(t *testing.T) {
 	})
 }
 
+// TestParseVersionDirective covers the directive RDF 1.2 adds, in both of its
+// spellings.
+//
+//	version          ::= '@version' VersionSpecifier '.'
+//	sparqlVersion    ::= "VERSION" VersionSpecifier
+//	VersionSpecifier ::= STRING_LITERAL_QUOTE | STRING_LITERAL_SINGLE_QUOTE
+//
+// The sources are those of the W3C RDF 1.2 Turtle syntax suite's
+// turtle12-version tests, which this package's own conformance run will read
+// once that suite is vendored.
+func TestParseVersionDirective(t *testing.T) {
+	t.Run("the keyword is kept as written", func(t *testing.T) {
+		doc := parse(t, "VERSION \"1.2\"\nversion '1.2-basic'\n@version \"1.2\" .\n")
+
+		want := []turtle.Statement{
+			&turtle.VersionDirective{Pos: pos(1, 1), Keyword: "VERSION", Version: "1.2"},
+			&turtle.VersionDirective{Pos: pos(2, 1), Keyword: "version", Version: "1.2-basic"},
+			&turtle.VersionDirective{Pos: pos(3, 1), Keyword: "@version", Version: "1.2"},
+		}
+		if !reflect.DeepEqual(doc.Statements, want) {
+			t.Errorf("Parse() = %#v, want %#v", doc.Statements, want)
+		}
+	})
+
+	t.Run("a directive stands wherever a statement may", func(t *testing.T) {
+		testCases := []struct {
+			name string
+			src  string
+			want []turtle.Statement
+		}{
+			{
+				name: "before everything else",
+				src:  "VERSION \"1.2\"\nPREFIX : <http://example/>\n:s :p :o .",
+				want: []turtle.Statement{
+					&turtle.VersionDirective{Pos: pos(1, 1), Keyword: "VERSION", Version: "1.2"},
+					&turtle.PrefixDirective{
+						Pos: pos(2, 1), Keyword: "PREFIX", Prefix: "",
+						IRI: &turtle.IRIRef{Pos: pos(2, 10), Value: "http://example/"},
+					},
+					&turtle.Triples{
+						Pos:     pos(3, 1),
+						Subject: name(3, 1, "", "s"),
+						Predicates: []*turtle.PredicateObject{{
+							Pos:     pos(3, 4),
+							Verb:    name(3, 4, "", "p"),
+							Objects: []*turtle.Object{{Term: name(3, 7, "", "o")}},
+						}},
+					},
+				},
+			},
+			{
+				name: "after a triple, announcing the rest of the document",
+				src:  "PREFIX : <http://example/>\n:s :p :o .\nVERSION \"1.2\"\n:a :b :c .",
+				want: []turtle.Statement{
+					&turtle.PrefixDirective{
+						Pos: pos(1, 1), Keyword: "PREFIX", Prefix: "",
+						IRI: &turtle.IRIRef{Pos: pos(1, 10), Value: "http://example/"},
+					},
+					&turtle.Triples{
+						Pos:     pos(2, 1),
+						Subject: name(2, 1, "", "s"),
+						Predicates: []*turtle.PredicateObject{{
+							Pos:     pos(2, 4),
+							Verb:    name(2, 4, "", "p"),
+							Objects: []*turtle.Object{{Term: name(2, 7, "", "o")}},
+						}},
+					},
+					&turtle.VersionDirective{Pos: pos(3, 1), Keyword: "VERSION", Version: "1.2"},
+					&turtle.Triples{
+						Pos:     pos(4, 1),
+						Subject: name(4, 1, "", "a"),
+						Predicates: []*turtle.PredicateObject{{
+							Pos:     pos(4, 4),
+							Verb:    name(4, 4, "", "b"),
+							Objects: []*turtle.Object{{Term: name(4, 7, "", "c")}},
+						}},
+					},
+				},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				got := parse(t, tc.src).Statements
+				if !reflect.DeepEqual(got, tc.want) {
+					t.Errorf("Parse() = %#v, want %#v", got, tc.want)
+				}
+			})
+		}
+	})
+
+	t.Run("more than one directive is not an error", func(t *testing.T) {
+		doc := parse(t, "VERSION \"1.2\"\nversion \"1.2\"\n@version \"1.2\" .\n:s :p 1 .\n")
+
+		if len(doc.Statements) != 4 {
+			t.Errorf("parsed %d statements, want 4", len(doc.Statements))
+		}
+	})
+}
+
+// TestParseVersionDirectiveRejects covers a version directive written where
+// the grammar has no place for one, and written with a specifier the grammar
+// does not admit.
+//
+// A directive is a statement, so it stands where a statement may and nowhere
+// else: a version keyword inside a triple, a collection, an annotation block or
+// a pair of angles is refused by the production it interrupted.
+func TestParseVersionDirectiveRejects(t *testing.T) {
+	sources := []string{
+		`VERSION`,
+		`VERSION 1.2`,
+		`VERSION :notastring`,
+		`@version 1.2 .`,
+		`@version "1.2"`,
+		`VERSION "1.2" .`,
+		`VERSION """1.2"""`,
+		`VERSION '''1.2'''`,
+		`@version """1.2""" .`,
+		`@version '''1.2''' .`,
+		`:s :p VERSION "1.2" .`,
+		`:s VERSION "1.2" :o .`,
+		`:s :p ( VERSION "1.2" ) .`,
+		`[ VERSION "1.2" ] .`,
+		`:s :p :o {| VERSION "1.2" |} .`,
+		`<< VERSION "1.2" >> :p :o .`,
+		`:s :p <<( VERSION "1.2" )>> .`,
+	}
+
+	for _, src := range sources {
+		t.Run(src, func(t *testing.T) {
+			if doc, err := turtle.Parse(strings.NewReader(src)); err == nil {
+				t.Errorf("Parse() = %#v, want an error", doc)
+			}
+		})
+	}
+}
+
 // TestParseRejects covers the tokens the grammar has no place for where they
 // stand, in the positions RDF 1.1 already had.
 func TestParseRejects(t *testing.T) {
