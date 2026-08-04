@@ -6,7 +6,9 @@
 // one for one. A triple term lowers to an [rdf.TripleTerm] and contributes no
 // triples; a reified triple contributes exactly one — the rdf:reifies triple
 // relating its reifier to that term — and lowers to the reifier, which is the
-// term the rest of the statement sees.
+// term the rest of the statement sees. An annotation lowers to no term at all
+// and to as many triples as it was written with: one rdf:reifies per reifier,
+// and everything an annotation block says about the reifier it was given.
 
 package turtle
 
@@ -80,7 +82,9 @@ var errConsumerStopped = errors.New("turtle: consumer stopped")
 // relative IRIs are resolved against the base in scope, collections and blank
 // node property lists become the triples they stand for, "a" becomes rdf:type,
 // a number or a boolean written as itself takes the datatype its form implies,
-// and a reified triple becomes the rdf:reifies triple it is sugar for.
+// a reified triple becomes the rdf:reifies triple it is sugar for, and an
+// annotation becomes the reification of the triple it was written on together
+// with what the annotation block said about it.
 //
 // A triple term is the one construct that becomes a term rather than triples:
 // it yields an [rdf.TripleTerm], nested to whatever depth the document wrote.
@@ -104,6 +108,10 @@ var errConsumerStopped = errors.New("turtle: consumer stopped")
 // of triples in a graph means nothing, so this is a choice rather than a
 // requirement, but it is the order the specification's own examples are written
 // in (Turtle §7.3).
+//
+// An annotation is the one thing that comes after rather than before, since a
+// reifier is written after the triple it describes and cannot be built until
+// that triple is: ":s :p :o {| :q :v |}" yields ":s :p :o" first.
 //
 // Iteration stops at the first error, which is yielded with the zero
 // [rdf.Triple] and followed by nothing:
@@ -282,9 +290,10 @@ func (l *lowering) triples(t *Triples) error {
 }
 
 // predicateObjects emits one triple for every object of every verb given for
-// subject.
+// subject, followed by whatever each object's annotation says about it.
 //
 //	predicateObjectList ::= verb objectList (';' (verb objectList)?)*
+//	objectList          ::= object annotation (',' object annotation)*
 func (l *lowering) predicateObjects(subject rdf.Term, list []*PredicateObject) error {
 	for _, po := range list {
 		predicate, err := l.verb(po.Verb)
@@ -293,7 +302,7 @@ func (l *lowering) predicateObjects(subject rdf.Term, list []*PredicateObject) e
 		}
 
 		for _, node := range po.Objects {
-			object, err := l.term(node)
+			object, err := l.term(node.Term)
 			if err != nil {
 				return err
 			}
@@ -310,9 +319,92 @@ func (l *lowering) predicateObjects(subject rdf.Term, list []*PredicateObject) e
 			if err := l.emit(triple); err != nil {
 				return err
 			}
+
+			if err := l.annotation(triple, node.Annotation); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// annotation emits what the reifiers and annotation blocks written after an
+// object say about the triple that object completes.
+//
+//	annotation      ::= (reifier | annotationBlock)*
+//	annotationBlock ::= '{|' predicateObjectList '|}'
+//
+// The triple is annotated by way of a reifier, exactly as a reified triple is:
+// the triple term standing for it is built once, and every reifier in the
+// sequence is related to that one term with rdf:reifies (RDF 1.2 Turtle §7.3).
+// The triple itself has already been emitted, which is the difference between
+// the two forms — an annotation asserts the triple it describes and a reified
+// triple does not.
+//
+// A block takes the reifier written immediately before it, and the '~' is
+// spent doing so: in "~ :r {| :q :v |} {| :x :y |}" the first block is said of
+// ":r" and the second of a blank node minted for it. A block with no reifier
+// before it mints one and states its rdf:reifies too, which is why two blocks
+// written alike still describe two reifications.
+func (l *lowering) annotation(triple rdf.Triple, items []Annotation) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	// A conversion rather than three assignments: the triple term an annotation
+	// reifies is exactly the triple just emitted, standing as a term. The two
+	// types have the same three fields, which is what makes it legal, and a
+	// field added to either would be a compile error here rather than a
+	// silently dropped one.
+	term := rdf.TripleTerm(triple)
+
+	// The reifier in scope, or nil when none is: cleared at the start of the
+	// annotation and again as each block spends the one it was given.
+	var reifier rdf.Term
+	for _, item := range items {
+		switch it := item.(type) {
+		case *Reifier:
+			r, err := l.reifier(it)
+			if err != nil {
+				return err
+			}
+			if err := l.reifies(r, term, it.Pos); err != nil {
+				return err
+			}
+			reifier = r
+
+		case *AnnotationBlock:
+			if reifier == nil {
+				reifier = l.scope.New()
+				if err := l.reifies(reifier, term, it.Pos); err != nil {
+					return err
+				}
+			}
+			if err := l.predicateObjects(reifier, it.Predicates); err != nil {
+				return err
+			}
+			reifier = nil
+
+		default:
+			panic(fmt.Sprintf("unknown annotation node: %T", item))
+		}
+	}
+	return nil
+}
+
+// reifies states that reifier identifies term, which is the one triple a
+// reifier stands for wherever it is written.
+//
+// pos is where to report a term the data model refuses. Nothing the grammar
+// admits in a reifier can fail the check — an IRI or a blank node is what the
+// subject position wants, and rdf:reifies is not the empty IRI — so this is the
+// same belt-and-braces validation the rest of the lowering does.
+func (l *lowering) reifies(reifier rdf.Term, term rdf.TripleTerm, pos Pos) error {
+	triple := rdf.Triple{Subject: reifier, Predicate: vocab.RDFReifies, Object: term}
+	if err := triple.Validate(); err != nil {
+		return InvalidTermError{Pos: pos, Err: err}
+	}
+	return l.emit(triple)
 }
 
 // verb lowers what stands in the predicate position.
@@ -425,18 +517,14 @@ func (l *lowering) reifiedTriple(r *ReifiedTriple) (rdf.Term, error) {
 		return nil, err
 	}
 
-	triple := rdf.Triple{Subject: reifier, Predicate: vocab.RDFReifies, Object: term}
-	if err := triple.Validate(); err != nil {
-		return nil, InvalidTermError{Pos: r.Pos, Err: err}
-	}
-	if err := l.emit(triple); err != nil {
+	if err := l.reifies(reifier, term, r.Pos); err != nil {
 		return nil, err
 	}
 	return reifier, nil
 }
 
-// reifier lowers the identifier a reified triple is given, minting a blank node
-// when the document named none.
+// reifier lowers the identifier a reified triple or an annotation is given,
+// minting a blank node when the document named none.
 //
 //	reifier ::= '~' (iri | BlankNode)?
 //

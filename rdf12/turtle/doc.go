@@ -34,10 +34,16 @@
 // [Parse] reads a document into a syntax tree, and [Decode] reads it straight
 // into the triples it means, one at a time. The tree keeps what the author
 // wrote — a reified triple stays sugar rather than becoming the rdf:reifies
-// triple it stands for — and the decoder is where the sugar is spent: a triple
+// triple it stands for, and an annotation stays attached to the [Object] it
+// was written after — and the decoder is where the sugar is spent: a triple
 // term becomes an [github.com/z5labs/rdf-go.TripleTerm], and a reified triple
 // becomes one triple relating its reifier to that term. Neither asserts the
 // statement it encloses.
+//
+// An annotation is the other way about. Writing ":s :p :o {| :q :v |}" asserts
+// ":s :p :o" and then describes it, by reifying it under the identifier the
+// '~' named or a blank node minted for the block and saying the block's
+// contents about that identifier.
 //
 // Everything RDF 1.1 Turtle accepts is accepted here unchanged.
 package turtle

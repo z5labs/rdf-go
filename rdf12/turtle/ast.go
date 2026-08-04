@@ -2,12 +2,17 @@
 // same Document, the same Statement and Term interfaces, and the same nodes for
 // everything RDF 1.1 could write.
 //
-// What RDF 1.2 adds here is [TripleTerm], [ReifiedTriple] and [Reifier], and a
-// base direction on [Literal]. The two bracketed forms are kept as two nodes
-// rather than one with a flag, because they are not two spellings of one thing:
-// a triple term is a term of the data model, and a reified triple is sugar that
-// stands for a reifier and an rdf:reifies triple relating it to one. A printer
-// asked to write back what the author wrote has to be able to tell them apart.
+// What RDF 1.2 adds here is [TripleTerm], [ReifiedTriple], [Reifier] and
+// [AnnotationBlock], and a base direction on [Literal]. The two bracketed forms
+// are kept as two nodes rather than one with a flag, because they are not two
+// spellings of one thing: a triple term is a term of the data model, and a
+// reified triple is sugar that stands for a reifier and an rdf:reifies triple
+// relating it to one. A printer asked to write back what the author wrote has
+// to be able to tell them apart.
+//
+// The annotation syntax is why an object list holds [Object] rather than
+// [Term]: an annotation is written after one object of the list and belongs to
+// that object alone, so it is a field of the object and not of the list.
 
 package turtle
 
@@ -106,12 +111,78 @@ func (*Triples) statement() {}
 // PredicateObject is one verb and the objects given for it.
 //
 //	predicateObjectList ::= verb objectList (';' (verb objectList)?)*
-//	objectList          ::= object (',' object)*
+//	objectList          ::= object annotation (',' object annotation)*
 type PredicateObject struct {
 	Pos     Pos
 	Verb    Verb
-	Objects []Term
+	Objects []*Object
 }
+
+// Object is one object of an object list, together with the annotation written
+// after it.
+//
+//	objectList ::= object annotation (',' object annotation)*
+//	annotation ::= (reifier | annotationBlock)*
+//
+// The annotation belongs to the object rather than to the list, which is the
+// whole of what makes ":s :p :o1, :o2 {| :q :v |}" say something about
+// ":s :p :o2" and nothing about ":s :p :o1". Keeping it here is also what lets
+// a printer put it back where the author wrote it.
+type Object struct {
+	// Term is the object itself.
+	Term Term
+
+	// Annotation is the reifiers and annotation blocks written after the
+	// object, in the order they were written, or nil if there were none.
+	//
+	// The order matters: an annotation block takes the reifier written
+	// immediately before it and mints a blank node when there is none, so
+	// "~ :r {| ... |}" and "{| ... |} ~ :r" do not mean the same thing.
+	Annotation []Annotation
+}
+
+// Position returns the position of the object's first character.
+func (o *Object) Position() Pos { return o.Term.Position() }
+
+// Annotation is one item of what may follow an object: a [*Reifier] or an
+// [*AnnotationBlock].
+//
+//	annotation ::= (reifier | annotationBlock)*
+//
+// The interface is sealed, so a type switch over it is exhaustive and a
+// default case can be treated as a programming error.
+type Annotation interface {
+	// Position returns the position of the item's first character.
+	Position() Pos
+
+	// annotation seals the interface.
+	annotation()
+}
+
+// AnnotationBlock is metadata attached to the triple just written, between
+// "{|" and "|}".
+//
+//	annotationBlock ::= '{|' predicateObjectList '|}'
+//
+// It is sugar (RDF 1.2 Turtle §7.3): the block's subject is the reifier of the
+// triple the annotation is written on — the one named by a '~' immediately
+// before the block, or a fresh blank node — and everything inside the block is
+// said about that reifier rather than about the triple's own subject.
+//
+// The predicate object list is the same production as a statement's, so an
+// annotation block may hold anything a statement may, annotations included.
+type AnnotationBlock struct {
+	// Pos is the position of the opening "{|".
+	Pos Pos
+
+	// Predicates are the verbs and objects said about the reifier.
+	Predicates []*PredicateObject
+}
+
+// Position returns the position of the opening "{|".
+func (b *AnnotationBlock) Position() Pos { return b.Pos }
+
+func (*AnnotationBlock) annotation() {}
 
 // Verb is what stands in the predicate position: an [*IRIRef], a
 // [*PrefixedName], or the [*A] keyword.
@@ -157,6 +228,9 @@ var (
 	_ Term = (*Literal)(nil)
 	_ Term = (*TripleTerm)(nil)
 	_ Term = (*ReifiedTriple)(nil)
+
+	_ Annotation = (*Reifier)(nil)
+	_ Annotation = (*AnnotationBlock)(nil)
 
 	_ Statement = (*PrefixDirective)(nil)
 	_ Statement = (*BaseDirective)(nil)
@@ -354,13 +428,18 @@ func (r *ReifiedTriple) Position() Pos { return r.Pos }
 
 func (*ReifiedTriple) term() {}
 
-// Reifier is the identifier a reified triple is given.
+// Reifier is the identifier a reified triple or an annotated triple is given.
 //
 //	reifier ::= '~' (iri | BlankNode)?
 //
 // The identifier is optional: a '~' standing alone reifies under a blank node
 // the document does not name, exactly as leaving the reifier out altogether
 // does.
+//
+// One node serves both places the production is named, because it is the same
+// production: the '~' inside a "<<" pair identifies the triple the pair
+// encloses, and the '~' after an object identifies the triple that object
+// completes.
 type Reifier struct {
 	// Pos is the position of the '~'.
 	Pos Pos
@@ -372,6 +451,8 @@ type Reifier struct {
 
 // Position returns the position of the '~'.
 func (r *Reifier) Position() Pos { return r.Pos }
+
+func (*Reifier) annotation() {}
 
 // LiteralKind is how a literal was written.
 type LiteralKind int
