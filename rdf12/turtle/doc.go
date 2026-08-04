@@ -45,5 +45,25 @@
 // '~' named or a blank node minted for the block and saying the block's
 // contents about that identifier.
 //
-// Everything RDF 1.1 Turtle accepts is accepted here unchanged.
+// Writing mirrors the two. [Print] writes a [Document] back, abbreviations and
+// comments and all, so that [Parse] and [Print] together rewrite a document
+// rather than replace it — a reified triple comes back as a reified triple, an
+// annotation stays on the object it was written after, and a version directive
+// keeps its place among the statements. [Encode] writes data model triples,
+// choosing how to say them: statements about one subject gathered into one,
+// rdf:type written "a", and IRIs abbreviated against the prefixes a caller
+// supplies with [WithPrefixes]. Both lay a document out within a line width,
+// configurable along with the indentation by [WithLineWidth] and [WithIndent].
+//
+// The sugar is [Print]'s alone. [Encode] is given triples and not a document,
+// so it cannot know whether a reification was written as "<< ... ~ :r >>", as
+// an annotation, or as the rdf:reifies triple both stand for; it writes the
+// last of those, which says what the graph says and nothing more. Its
+// documentation sets out why.
+//
+// Everything RDF 1.1 Turtle accepts is accepted here unchanged, and everything
+// the RDF 1.1 printer writes is written here unchanged. What this package adds
+// is that neither of the two terms the RDF 1.1 encoder has to refuse — a triple
+// term, and a literal carrying a base direction — is refused here: RDF 1.2
+// Turtle has a syntax for both.
 package turtle
